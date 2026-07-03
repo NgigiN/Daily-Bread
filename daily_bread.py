@@ -22,6 +22,7 @@ VERSE_RANGE_END = 200
 CHAPTER_SUFFIX = re.compile(r"^(.+?)\s+(\d+)(?:-(\d+))?$")
 FETCH_DELAY_SEC = 0.5
 MAX_FETCH_RETRIES = 4
+SEND_DELAY_SEC = 0.35
 
 
 def get_eat_today():
@@ -91,6 +92,22 @@ def _needs_verse_range(returned_ref, chapter):
     return re.search(rf"\b{chapter}:\d+\b", returned_ref) is not None
 
 
+def _format_chapter_text(data):
+    verses = data.get("verses")
+    if verses:
+        parts = []
+        for verse in verses:
+            text = verse.get("text", "").strip()
+            if not text:
+                continue
+            parts.append(f"<b>{verse['verse']}</b> {html.escape(text)}")
+        if parts:
+            return "\n".join(parts)
+
+    text = data.get("text", "").strip()
+    return html.escape(text) if text else ""
+
+
 def _fetch_chapter(book, chapter):
     query = f"{book} {chapter}"
     data = _api_query(query)
@@ -98,7 +115,7 @@ def _fetch_chapter(book, chapter):
         return None
 
     returned_ref = data.get("reference", query)
-    text = data.get("text", "").strip()
+    text = _format_chapter_text(data)
     if not text:
         return None
 
@@ -107,7 +124,7 @@ def _fetch_chapter(book, chapter):
         if data.get("error"):
             return None
         returned_ref = data.get("reference", query)
-        text = data.get("text", "").strip()
+        text = _format_chapter_text(data)
         if not text:
             return None
 
@@ -119,7 +136,7 @@ def fetch_bible_text(reference):
         return None, None
 
     book, start, end = parse_reference(reference)
-    parts = []
+    chapters = []
 
     if start is not None:
         for chapter in range(start, end + 1):
@@ -131,7 +148,7 @@ def fetch_bible_text(reference):
             if result is None:
                 print(f"Fetch warning: missing {book} {chapter}")
                 continue
-            parts.append(result[1])
+            chapters.append(result)
             time.sleep(FETCH_DELAY_SEC)
     else:
         for chapter in range(1, MAX_CHAPTERS + 1):
@@ -142,16 +159,20 @@ def fetch_bible_text(reference):
                 result = None
             if result is None:
                 break
-            parts.append(result[1])
+            chapters.append(result)
             time.sleep(FETCH_DELAY_SEC)
 
-    if not parts:
-        return (
-            reference,
-            f"Could not fetch text. Please read {reference} on Bible.com or in your app.",
-        )
+    if not chapters:
+        return reference, [
+            (
+                reference,
+                html.escape(
+                    f"Could not fetch text. Please read {reference} on Bible.com or in your app."
+                ),
+            )
+        ]
 
-    return reference, "\n\n".join(parts)
+    return reference, chapters
 
 
 def get_telegram_config():
@@ -179,7 +200,45 @@ def split_message(text, limit=MAX_MESSAGE_LEN):
     return chunks
 
 
-def send_to_telegram(content):
+def _chapter_heading(chapter_ref, continued=False):
+    ref = html.escape(chapter_ref)
+    if continued:
+        return f"<b>{ref}</b> <i>(continued)</i>\n\n"
+    return f"<b>{ref}</b>\n\n"
+
+
+def build_chapter_messages(chapter_ref, chapter_text):
+    heading = _chapter_heading(chapter_ref)
+    continued_heading = _chapter_heading(chapter_ref, continued=True)
+    text_limit = MAX_MESSAGE_LEN - len(continued_heading)
+
+    text_chunks = split_message(chapter_text, text_limit)
+    messages = []
+    for index, chunk in enumerate(text_chunks):
+        current_heading = heading if index == 0 else continued_heading
+        messages.append(current_heading + chunk)
+    return messages
+
+
+def build_reading_messages(plan_week, day_name, returned_ref, chapters):
+    ref = html.escape(returned_ref)
+    messages = [
+        f"""📖 <b>52-Week Bible Reading Plan</b>
+<b>Week {plan_week} • {day_name}</b>
+
+<b>{ref}</b>"""
+    ]
+
+    for chapter_ref, chapter_text in chapters:
+        messages.extend(build_chapter_messages(chapter_ref, chapter_text))
+
+    messages.append(
+        "---\n<i>Made with Love by Sam• Text via bible-api.com</i>"
+    )
+    return messages
+
+
+def send_to_telegram(messages):
     token, chat_ids = get_telegram_config()
     if not token or token.startswith("123456789"):
         print("❌ Set TELEGRAM_BOT_TOKEN in .env")
@@ -188,48 +247,42 @@ def send_to_telegram(content):
         print("❌ Set TELEGRAM_CHAT_IDS in .env (run discover_chats.py)")
         return False
 
-    chunks = split_message(content)
+    if isinstance(messages, str):
+        messages = [messages]
+
     url = TELEGRAM_API.format(token=token, method="sendMessage")
     sent_any = False
 
     for chat_id in chat_ids:
         try:
-            for chunk in chunks:
-                r = requests.post(
-                    url,
-                    json={
-                        "chat_id": chat_id,
-                        "text": chunk,
-                        "parse_mode": "HTML",
-                        "disable_web_page_preview": True,
-                    },
-                    timeout=15,
-                )
-                r.raise_for_status()
-                body = r.json()
-                if not body.get("ok"):
-                    print(f"❌ Telegram error for {chat_id}: {body}")
-                    break
+            for message in messages:
+                chunks = split_message(message)
+                for chunk in chunks:
+                    r = requests.post(
+                        url,
+                        json={
+                            "chat_id": chat_id,
+                            "text": chunk,
+                            "parse_mode": "HTML",
+                            "disable_web_page_preview": True,
+                        },
+                        timeout=15,
+                    )
+                    r.raise_for_status()
+                    body = r.json()
+                    if not body.get("ok"):
+                        print(f"❌ Telegram error for {chat_id}: {body}")
+                        break
+                    time.sleep(SEND_DELAY_SEC)
+                else:
+                    continue
+                break
             else:
                 sent_any = True
         except Exception as e:
             print(f"❌ Telegram send error for {chat_id}: {e}")
 
     return sent_any
-
-
-def format_reading_message(plan_week, day_name, returned_ref, text):
-    plain = html.escape(text.strip())
-    ref = html.escape(returned_ref)
-    return f"""📖 <b>52-Week Bible Reading Plan</b>
-<b>Week {plan_week} • {day_name}</b>
-
-<b>{ref}</b>
-
-{plain}
-
----
-<i>Made with Love by Sam• Text via bible-api.com</i>"""
 
 
 def main():
@@ -241,10 +294,10 @@ def main():
         send_to_telegram(msg)
         return
 
-    returned_ref, text = fetch_bible_text(ref)
-    message = format_reading_message(plan_week, day_name, returned_ref, text)
+    returned_ref, chapters = fetch_bible_text(ref)
+    messages = build_reading_messages(plan_week, day_name, returned_ref, chapters)
 
-    if send_to_telegram(message):
+    if send_to_telegram(messages):
         print(f"✅ Sent successfully → Week {plan_week} • {day_name}: {ref}")
     else:
         print("❌ Failed to send to Telegram.")

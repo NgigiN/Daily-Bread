@@ -1,0 +1,9 @@
+Fetch warning: Ezek 19 failed (HTTPSConnectionPool(host='bible-api.com', port=443): Max retries exceeded with url: /Ezek+19 (Caused by ConnectTimeoutError(<HTTPSConnection(host='bible-api.com', port=443) at 0x7f54986e8440>, 'Connection to bible-api.com timed out. (connect timeout=15)')))
+Fetch warning: missing Ezek 19
+Fetch warning: Ezek 20 failed (HTTPSConnectionPool(host='bible-api.com', port=443): Max retries exceeded with url: /Ezek+20 (Caused by ConnectTimeoutError(<HTTPSConnection(host='bible-api.com', port=443) at 0x7f549881b610>, 'Connection to bible-api.com timed out. (connect timeout=15)')))
+Fetch warning: missing Ezek 20
+Fetch warning: Ezek 21 failed (HTTPSConnectionPool(host='bible-api.com', port=443): Max retries exceeded with url: /Ezek+21 (Caused by ConnectTimeoutError(<HTTPSConnection(host='bible-api.com', port=443) at 0x7f549881bed0>, 'Connection to bible-api.com timed out. (connect timeout=15)')))
+Fetch warning: missing Ezek 21
+Fetch warning: Ezek 22 failed (HTTPSConnectionPool(host='bible-api.com', port=443): Max retries exceeded with url: /Ezek+22 (Caused by ConnectTimeoutError(<HTTPSConnection(host='bible-api.com', port=443) at 0x7f54986fc190>, 'Connection to bible-api.com timed out. (connect timeout=15)')))
+Fetch warning: missing Ezek 22
+✅ Sent successfully → Week 27 • Friday: Ezek 19-24
