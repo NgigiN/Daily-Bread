@@ -1,143 +1,184 @@
 # Daily Bread
 
-If I'm so attached to my phone, I may just as well read the whole Bible in 1 year while I'm at it.
+Telegram bot for a 52-week Bible reading plan: **daily push** (cron) + **interactive commands** (webhook).
 
-Two ways to use the bot:
+Text via [bible-api.com](https://bible-api.com) (WEB), rate-limited for their **15 req / 30s** cap.
 
-1. **Daily push (cron)** — `daily_bread.py` sends today's 52-week plan reading to `TELEGRAM_CHAT_IDS`.
-2. **Interactive commands (webhook)** — anyone who starts the bot can use `/today`, `/verse`, `/chapter`, `/day`, etc.
+## Architecture
 
-Text is fetched from [bible-api.com](https://bible-api.com) (default WEB translation), rate-limited to stay within **15 requests / 30 seconds** per IP.
+```text
+Telegram ──HTTPS──► nginx (bible.samtama.lol, certbot)
+                         │
+                         ▼
+              127.0.0.1:5555  (ufw does NOT open 5555)
+                         │
+                         ▼
+              Docker container bible-bot
+              (listens 0.0.0.0:5555 inside; host bind is loopback only)
 
-## Setup
+Grafana Alloy (VPS) ──► Grafana Cloud Loki
+  {job="docker", container="bible-bot"}
+  {job="nginx"}  (site access log)
+```
+
+## Commands
+
+| Command | Example | Purpose |
+|---------|---------|---------|
+| `/start` | | Welcome |
+| `/help` | | Full help |
+| `/today` | | Today's plan (EAT) |
+| `/day` | `/day 17 may` | Plan for date (current year) |
+| `/verse` | `/verse John 3:16` | Verse / range |
+| `/chapter` | `/chapter Rom 1-2` | Chapter(s), max 6 |
+
+Interactive use is **open** to anyone who starts the bot.  
+`TELEGRAM_CHAT_IDS` is only for the **daily cron push**.
+
+---
+
+## Local setup (optional, without Docker)
 
 ```bash
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
+cp .env.example .env   # edit token / chat ids
+python bot_app.py      # or: python daily_bread.py
 ```
 
-Edit `.env` with your bot token from [@BotFather](https://t.me/BotFather).
+---
 
-### Daily push recipients
+## Docker (production shape)
 
-Each person must open your bot and tap **Start**, then either:
+### Image goals
 
-- Run `python discover_chats.py` **before** the webhook is set (uses `getUpdates`), or
-- Put their chat ID in `TELEGRAM_CHAT_IDS` manually.
+- `python:3.12-slim-bookworm`, non-root user
+- Small context via `.dockerignore` (no `venv`, `.git`, logs)
+- Layer cache: `requirements.txt` installed before app copy
+- Healthcheck without extra packages
+
+### Run on the VPS
 
 ```bash
-python discover_chats.py
+cd /path/to/bible          # PROJECT_PATH
+cp .env.example .env       # once; fill secrets
+docker compose up -d --build
+
+curl http://127.0.0.1:5555/health
+docker logs bible-bot --tail 50
 ```
 
-Copy chat IDs into `TELEGRAM_CHAT_IDS` (comma-separated). Interactive commands work for **anyone**; the list is only for the daily cron push.
+**Port rule:** compose publishes **`127.0.0.1:5555:5555` only**.  
+Nothing on the public internet should hit 5555; nginx on the host proxies. UFW stays closed for 5555.
 
-## Commands
+Inside the container, the app listens on `0.0.0.0:5555` (required for Docker port mapping). That is **not** public exposure.
 
-| Command | Example | What it does |
-|---------|---------|----------------|
-| `/start` | `/start` | Welcome + short list |
-| `/help` | `/help` | Full help |
-| `/today` | `/today` | Today's plan reading (Africa/Nairobi) |
-| `/day` | `/day 17 may` | Plan reading for that date in the **current year** |
-| `/verse` | `/verse John 3:16` | Verse or range (`Jn 3:16-17`, `Matt 25:31-33`) |
-| `/chapter` | `/chapter John 3` | Full chapter or range (`Rom 1-2`, max 6 chapters) |
-
-## Run locally
-
-### Daily push (unchanged)
+### Daily push (host cron + running container)
 
 ```bash
-python daily_bread.py
-# or
-./run_daily.sh
+chmod +x deploy/run_daily_docker.sh
+
+# crontab -e  (example 06:00 server time)
+0 6 * * * /path/to/bible/deploy/run_daily_docker.sh >> /path/to/bible/daily_bread.log 2>&1
 ```
 
-### Interactive bot
+This runs `docker compose exec -T bot python daily_bread.py` (same image, same `.env`).
+
+---
+
+## nginx site file (name + symlink)
+
+**Config file in repo (exact sites-available name):**
+
+`deploy/nginx/bible.samtama.lol`
+
+**Install:**
 
 ```bash
-# Uses APP_HOST / APP_PORT from .env (default 127.0.0.1:5555)
-python bot_app.py
-# or
-uvicorn bot_app:app --host 127.0.0.1 --port 5555
+sudo cp /path/to/bible/deploy/nginx/bible.samtama.lol \
+  /etc/nginx/sites-available/bible.samtama.lol
+
+sudo ln -sf /etc/nginx/sites-available/bible.samtama.lol \
+  /etc/nginx/sites-enabled/bible.samtama.lol
+
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d bible.samtama.lol
 ```
 
-Health check: `curl http://127.0.0.1:5555/health`
+DNS: `bible.samtama.lol` → VPS public IP.
 
-## Deploy (nginx + certbot + systemd)
+---
 
-Domain: **`bible.samtama.lol`** → reverse proxy to **`127.0.0.1:5555`** (port 8000 is reserved for other services).
+## GitHub Actions CI/CD
 
-1. Point DNS A/AAAA for `bible.samtama.lol` at the server.
-2. Copy and enable nginx:
+Workflow: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
 
-   ```bash
-   sudo cp deploy/nginx-bible.samtama.lol.conf /etc/nginx/sites-available/bible.samtama.lol
-   sudo ln -sf /etc/nginx/sites-available/bible.samtama.lol /etc/nginx/sites-enabled/
-   sudo nginx -t && sudo systemctl reload nginx
-   ```
+| Trigger | Action |
+|---------|--------|
+| Push to **`main`** | SSH → `git pull` → `docker compose build` → `up -d` → health check |
 
-3. TLS:
+### Secrets (GitHub repo → Settings → Secrets and variables → Actions)
 
-   ```bash
-   sudo certbot --nginx -d bible.samtama.lol
-   ```
+| Secret | Example / notes |
+|--------|------------------|
+| `SERVER_HOST` | VPS IP or hostname |
+| `SERVER_USER` | e.g. `deploy` |
+| `SERVER_PORT` | e.g. `22` |
+| `SERVER_SSH_KEY` | Full private key PEM (deploy key or user key) |
+| `PROJECT_PATH` | Absolute path to this clone on the VPS, e.g. `/home/deploy/opt/bible` |
 
-4. Install the app service (edit paths/User in the unit if needed):
+### One-time VPS prep
 
-   ```bash
-   sudo cp deploy/bible-bot.service /etc/systemd/system/bible-bot.service
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now bible-bot
-   ```
+1. Clone the repo to `PROJECT_PATH`, install Docker + Compose plugin.
+2. Create `.env` there (not in git).
+3. Ensure the SSH user can `git fetch`/`pull` (deploy key or HTTPS token) and run `docker` (group membership).
+4. Install nginx site + certbot (above).
+5. Add cron for daily push.
+6. Add GitHub secrets; push to `main`.
 
-5. Set in `.env`:
+CI stays short: **no image build on GitHub runners** — only SSH + cached `docker compose build` on the VPS.
 
-   ```env
-   WEBHOOK_URL=https://bible.samtama.lol/webhook
-   WEBHOOK_SECRET=some-long-random-string
-   APP_PORT=5555
-   ```
+---
 
-   On startup the app calls `setMyCommands` and `setWebhook` when `WEBHOOK_URL` is set.
+## Grafana Cloud (same VPS Alloy stack)
 
-6. Confirm:
+Alloy already scrapes **all** Docker containers ([`logging/ops/alloy/config.alloy`](../logging/ops/alloy/config.alloy)). No Alloy change required.
 
-   ```bash
-   curl https://bible.samtama.lol/health
-   # In Telegram: /start, /help, /verse John 3:16
-   ```
+| Label | Value |
+|-------|--------|
+| `job` | `docker` |
+| `container` | `bible-bot` |
+| `service` | `bot` (compose service) |
+| `project` | compose project dir name |
 
-**Note:** While a webhook is active, Telegram will not deliver updates to `getUpdates`, so `discover_chats.py` will not see new chats until the webhook is removed.
+**Explore:**
+
+```logql
+{job="docker", container="bible-bot"}
+{job="docker", container="bible-bot"} | json | msg="request completed" | status != ""
+{job="nginx"} |= "bible.samtama.lol"
+```
+
+App logs JSON lines: `msg`, `method`, `path`, `status`, `latency_ms`.
+
+---
 
 ## Project layout
 
 | Path | Role |
 |------|------|
-| `daily_bread.py` | Cron / one-shot daily push |
-| `bot_app.py` | FastAPI webhook server |
-| `commands.py` | Command parse + handlers |
-| `bible_client.py` | bible-api.com client, rate limit, cache |
-| `plan_reader.py` | `plan.json` lookup by date |
-| `formatting.py` | Telegram HTML messages |
-| `telegram_client.py` | sendMessage, setWebhook, setMyCommands |
-| `config.py` | Env + constants |
+| `bot_app.py` | FastAPI webhook |
+| `daily_bread.py` | Daily push entrypoint |
+| `commands.py` | Command handlers |
+| `bible_client.py` | bible-api.com + rate limit + cache |
+| `docker-compose.yml` | `bible-bot` service, loopback publish |
+| `Dockerfile` | Slim production image |
+| `.github/workflows/deploy.yml` | Deploy on push to main |
+| `deploy/nginx/bible.samtama.lol` | nginx site |
+| `deploy/run_daily_docker.sh` | Cron helper |
 | `plan.json` | 52-week schedule |
-| `deploy/` | nginx + systemd templates |
 
 ## Rate limits
 
-bible-api.com allows about **15 requests every 30 seconds** per IP. This project:
-
-- spaces requests (≥ 0.5s) and caps concurrent budget (~14 / 30s),
-- retries on HTTP 429,
-- caches successful lookups for 1 hour,
-- limits `/chapter` ranges to **6** chapters.
-
-Cron and the webhook share the same public IP if they run on the same host.
-
-## Files (legacy helpers)
-
-- `discover_chats.py` — list chat IDs via `getUpdates` (offline webhook)
-- `run_daily.sh` — cron wrapper for `daily_bread.py`
+bible-api.com ≈ **15 requests / 30 seconds / IP**. Client uses spacing, global budget, 429 backoff, 1h cache, max 6 chapters per `/chapter`.

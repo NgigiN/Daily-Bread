@@ -1,0 +1,23 @@
+# Keep build context tiny → faster CI/VPS builds
+.git
+.github
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.log
+.env
+.env.*
+!.env.example
+deploy
+docs
+*.md
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.idea
+.vscode
+daily_bread.log
+**/.DS_Store

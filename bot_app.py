@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -27,18 +29,18 @@ async def lifespan(_app: FastAPI):
     if not is_placeholder_token(token):
         try:
             set_my_commands(BOT_COMMANDS, token=token)
-            print("✅ Bot commands registered")
+            print("✅ Bot commands registered", flush=True)
         except Exception as e:
-            print(f"⚠️ setMyCommands failed: {e}")
+            print(f"⚠️ setMyCommands failed: {e}", flush=True)
 
         webhook_url = get_webhook_url()
         if webhook_url:
             try:
                 secret = get_webhook_secret() or None
                 set_webhook(webhook_url, secret_token=secret, token=token)
-                print(f"✅ Webhook set → {webhook_url}")
+                print(f"✅ Webhook set → {webhook_url}", flush=True)
             except Exception as e:
-                print(f"⚠️ setWebhook failed: {e}")
+                print(f"⚠️ setWebhook failed: {e}", flush=True)
     yield
 
 
@@ -49,6 +51,28 @@ app = FastAPI(
     openapi_url=None,
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Structured access logs → Docker stdout → Grafana Alloy job=docker."""
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    print(
+        json.dumps(
+            {
+                "msg": "request completed",
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "latency_ms": elapsed_ms,
+            },
+            separators=(",", ":"),
+        ),
+        flush=True,
+    )
+    return response
 
 
 @app.get("/health")

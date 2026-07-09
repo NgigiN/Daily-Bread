@@ -1,0 +1,56 @@
+# Deploy bible-bot to the VPS on every push to main.
+# Build runs on the server (layer cache keeps it short for small Python app).
+#
+# Required GitHub secrets:
+#   SERVER_HOST      — VPS hostname or IP
+#   SERVER_USER      — SSH user (e.g. deploy)
+#   SERVER_PORT      — SSH port (e.g. 22)
+#   SERVER_SSH_KEY   — private key (full PEM)
+#   PROJECT_PATH     — absolute path to this repo on the VPS
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-bible-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: SSH deploy (docker compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          # Fail fast if secrets missing / host unreachable
+          command_timeout: 12m
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.PROJECT_PATH }}"
+
+            echo "==> git pull"
+            git fetch --depth=1 origin main
+            git checkout main
+            git reset --hard origin/main
+
+            echo "==> docker compose build & up"
+            # BuildKit + reuse layers from bible-bot:latest when present
+            DOCKER_BUILDKIT=1 docker compose build
+            docker compose up -d --remove-orphans
+
+            echo "==> health"
+            sleep 2
+            curl -fsS --max-time 10 http://127.0.0.1:5555/health
+            echo
+            docker compose ps
+            echo "==> deploy OK"
