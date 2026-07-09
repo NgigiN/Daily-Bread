@@ -1,0 +1,29 @@
+# systemd unit for the interactive Telegram bot (uvicorn)
+#
+# Install (adjust User/WorkingDirectory/paths for your server):
+#   sudo cp deploy/bible-bot.service /etc/systemd/system/bible-bot.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now bible-bot
+#   sudo systemctl status bible-bot
+#
+# Daily push remains separate: cron → run_daily.sh → daily_bread.py
+
+[Unit]
+Description=Daily Bread Telegram bot (webhook)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ngigi
+Group=ngigi
+WorkingDirectory=/home/ngigi/Documents/projects/bible
+EnvironmentFile=/home/ngigi/Documents/projects/bible/.env
+ExecStart=/home/ngigi/Documents/projects/bible/venv/bin/uvicorn bot_app:app --host 127.0.0.1 --port 5555
+Restart=on-failure
+RestartSec=5
+# Do not buffer Python logs
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
