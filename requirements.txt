@@ -2,7 +2,7 @@ certifi==2026.6.17
 python-dotenv==1.1.0
 charset-normalizer==3.4.7
 idna==3.18
-pip==26.1.2
 requests==2.34.2
 urllib3==2.7.0
-uv==0.11.21
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
