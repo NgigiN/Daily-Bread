@@ -46,11 +46,24 @@ jobs:
             echo "==> docker compose build & up"
             # BuildKit + reuse layers from bible-bot:latest when present
             DOCKER_BUILDKIT=1 docker compose build
-            docker compose up -d --remove-orphans
+            # --wait blocks until the container healthcheck passes (lifespan + Telegram API).
+            docker compose up -d --remove-orphans --wait --wait-timeout 120
 
             echo "==> health"
-            sleep 2
-            curl -fsS --max-time 10 http://127.0.0.1:5555/health
-            echo
+            # Belt-and-suspenders: host port can lag briefly after container reports healthy.
+            for attempt in $(seq 1 10); do
+              if curl -fsS --max-time 5 http://127.0.0.1:5555/health; then
+                echo
+                break
+              fi
+              if [ "$attempt" -eq 10 ]; then
+                echo "health check failed after 10 attempts"
+                docker compose ps
+                docker compose logs --tail=50 bot
+                exit 1
+              fi
+              echo "attempt ${attempt}/10: not ready yet, retrying in 3s..."
+              sleep 3
+            done
             docker compose ps
             echo "==> deploy OK"
