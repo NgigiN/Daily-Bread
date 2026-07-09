@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from contextlib import asynccontextmanager
 from typing import Any
@@ -20,27 +19,55 @@ from config import (
     get_webhook_url,
     is_placeholder_token,
 )
-from telegram_client import send_messages, set_my_commands, set_webhook
+from logutil import log_event
+from telegram_client import (
+    register_bot_webhook,
+    send_messages,
+    set_my_commands,
+)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     token = get_bot_token()
-    if not is_placeholder_token(token):
-        try:
-            set_my_commands(BOT_COMMANDS, token=token)
-            print("✅ Bot commands registered", flush=True)
-        except Exception as e:
-            print(f"⚠️ setMyCommands failed: {e}", flush=True)
+    if is_placeholder_token(token):
+        log_event("startup_warning", reason="TELEGRAM_BOT_TOKEN missing or placeholder")
+        yield
+        return
 
-        webhook_url = get_webhook_url()
-        if webhook_url:
-            try:
-                secret = get_webhook_secret() or None
-                set_webhook(webhook_url, secret_token=secret, token=token)
-                print(f"✅ Webhook set → {webhook_url}", flush=True)
-            except Exception as e:
-                print(f"⚠️ setWebhook failed: {e}", flush=True)
+    try:
+        body = set_my_commands(BOT_COMMANDS, token=token)
+        log_event(
+            "commands_registered",
+            ok=bool(body.get("ok")),
+            description=body.get("description"),
+        )
+    except Exception as e:
+        log_event("commands_register_failed", error=str(e))
+
+    webhook_url = get_webhook_url()
+    secret = get_webhook_secret()
+    if not webhook_url:
+        log_event(
+            "startup_warning",
+            reason="WEBHOOK_URL empty — Telegram will not deliver messages; "
+            "set WEBHOOK_URL=https://bible.samtama.lol/webhook",
+        )
+    else:
+        try:
+            register_bot_webhook(
+                webhook_url,
+                secret_token=secret or None,
+                token=token,
+            )
+        except Exception as e:
+            log_event("webhook_register_failed", error=str(e), url=webhook_url)
+
+    log_event(
+        "startup_ready",
+        webhook_url=webhook_url or None,
+        secret_configured=bool(secret),
+    )
     yield
 
 
@@ -59,18 +86,12 @@ async def log_requests(request: Request, call_next):
     started = time.perf_counter()
     response = await call_next(request)
     elapsed_ms = int((time.perf_counter() - started) * 1000)
-    print(
-        json.dumps(
-            {
-                "msg": "request completed",
-                "method": request.method,
-                "path": request.url.path,
-                "status": response.status_code,
-                "latency_ms": elapsed_ms,
-            },
-            separators=(",", ":"),
-        ),
-        flush=True,
+    log_event(
+        "request completed",
+        method=request.method,
+        path=request.url.path,
+        status=response.status_code,
+        latency_ms=elapsed_ms,
     )
     return response
 
@@ -81,10 +102,22 @@ def health() -> dict[str, str]:
 
 
 def _verify_secret(header_value: str | None) -> None:
+    """
+    Compare X-Telegram-Bot-Api-Secret-Token to WEBHOOK_SECRET.
+
+    Only Telegram's servers send this header (after setWebhook with secret_token).
+    End users never supply it. Mismatch → 403 (forged or misconfigured webhook).
+    """
     expected = get_webhook_secret()
     if not expected:
         return
     if header_value != expected:
+        log_event(
+            "webhook_secret_rejected",
+            has_header=bool(header_value),
+            header_len=len(header_value) if header_value else 0,
+            expected_len=len(expected),
+        )
         raise HTTPException(status_code=403, detail="Invalid secret token")
 
 
@@ -102,30 +135,70 @@ async def webhook(
     try:
         update = await request.json()
     except Exception:
+        log_event("webhook_bad_json")
         raise HTTPException(status_code=400, detail="Invalid JSON") from None
 
+    update_id = update.get("update_id")
     message = _extract_message(update)
     if not message:
+        log_event("webhook_ignored", reason="no_message", update_id=update_id)
         return JSONResponse({"ok": True})
 
     chat = message.get("chat") or {}
     chat_id = chat.get("id")
     text = (message.get("text") or "").strip()
     if chat_id is None or not text:
+        log_event(
+            "webhook_ignored",
+            reason="empty_chat_or_text",
+            update_id=update_id,
+            chat_id=chat_id,
+        )
         return JSONResponse({"ok": True})
 
-    replies = handle_message_text(text)
-    if replies is None:
-        # Plain text that is not a command — point users at help
-        if text.startswith("/"):
-            replies = handle_message_text("/help") or []
-        else:
-            replies = [
-                "Send a command to get started. Try /help or /today."
-            ]
+    log_event(
+        "webhook_update",
+        update_id=update_id,
+        chat_id=chat_id,
+        text=text[:200],
+    )
 
-    # Blocking I/O (bible-api + telegram); fine for low traffic
-    send_messages(chat_id, replies)
+    try:
+        replies = handle_message_text(text)
+        if replies is None:
+            if text.startswith("/"):
+                replies = handle_message_text("/help") or [
+                    "Unknown command. Try /help."
+                ]
+            else:
+                replies = [
+                    "Send a command to get started. Try /help or /today."
+                ]
+
+        ok = send_messages(chat_id, replies)
+        if not ok:
+            log_event(
+                "webhook_handler_send_failed",
+                chat_id=chat_id,
+                text=text[:80],
+            )
+    except Exception as e:
+        log_event(
+            "webhook_handler_error",
+            chat_id=chat_id,
+            error=str(e),
+            text=text[:80],
+        )
+        # Still 200 so Telegram does not hammer retries for app bugs;
+        # try a short error reply.
+        try:
+            send_messages(
+                chat_id,
+                "Sorry, something went wrong handling that command. Try again shortly.",
+            )
+        except Exception:
+            pass
+
     return JSONResponse({"ok": True})
 
 

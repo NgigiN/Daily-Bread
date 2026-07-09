@@ -106,7 +106,47 @@ This runs `docker compose exec -T bot python daily_bread.py` (same image, same `
 | `.github/workflows/deploy.yml` | Deploy on push to main |
 | `deploy/nginx/bible.samtama.lol` | nginx site |
 | `deploy/run_daily_docker.sh` | Cron helper |
+| `debug_webhook.py` | Webhook + secret diagnostics |
 | `plan.json` | 52-week schedule |
+
+## Debugging “menu works but no replies”
+
+The slash menu only proves `setMyCommands` worked. Replies need a **registered webhook**
+and a matching `WEBHOOK_SECRET` (server-to-server only — users never type it).
+
+On the VPS:
+
+```bash
+# Re-register webhook with the container's .env and probe
+docker compose exec bot python debug_webhook.py
+
+# Watch logs while you send /help from the phone
+docker logs bible-bot -f
+
+# nginx: are Telegram POSTs hitting /webhook? 200 or 403?
+sudo tail -f /var/log/nginx/bible.samtama.lol.access.log
+```
+
+Healthy:
+
+| Check | Expect |
+|--------|--------|
+| `getWebhookInfo.url` | `https://bible.samtama.lol/webhook` |
+| `last_error_message` | empty / null |
+| Probe **with** secret | HTTP 200 (if secret set) |
+| Probe **without** secret | HTTP 403 (if secret set) |
+| Logs after `/help` | `webhook_update` then `send_ok` |
+
+If you see many **403** on `/webhook`, Telegram is POSTing but the secret header does not
+match `WEBHOOK_SECRET`. Restart the bot so startup re-runs `setWebhook` with the same secret:
+
+```bash
+docker compose restart bot
+docker logs bible-bot --tail 80
+```
+
+Log events: `webhook_register_*`, `webhook_info`, `webhook_secret_rejected`,
+`webhook_update`, `send_ok` / `send_failed`.
 
 ## Rate limits
 

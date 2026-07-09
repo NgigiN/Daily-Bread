@@ -33,21 +33,31 @@ CACHE_TTL_SEC = 3600
 TIMEZONE = "Africa/Nairobi"
 
 
+def _strip_env(value: str | None) -> str:
+    """Strip whitespace and optional surrounding quotes from env values."""
+    if not value:
+        return ""
+    text = value.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1].strip()
+    return text
+
+
 def get_bot_token() -> str:
-    return os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    return _strip_env(os.getenv("TELEGRAM_BOT_TOKEN"))
 
 
 def get_chat_ids() -> list[str]:
-    raw = os.getenv("TELEGRAM_CHAT_IDS", "").strip()
+    raw = _strip_env(os.getenv("TELEGRAM_CHAT_IDS"))
     return [cid.strip() for cid in raw.split(",") if cid.strip()]
 
 
 def get_webhook_url() -> str:
-    return os.getenv("WEBHOOK_URL", "").strip()
+    return _strip_env(os.getenv("WEBHOOK_URL"))
 
 
 def get_webhook_secret() -> str:
-    return os.getenv("WEBHOOK_SECRET", "").strip()
+    return _strip_env(os.getenv("WEBHOOK_SECRET"))
 
 
 def get_app_host() -> str:

@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application code (plan.json required at runtime)
 COPY config.py bible_client.py plan_reader.py formatting.py \
      telegram_client.py commands.py bot_app.py daily_bread.py \
-     discover_chats.py plan.json ./
+     discover_chats.py debug_webhook.py logutil.py plan.json ./
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
     && chown -R appuser:appuser /app
