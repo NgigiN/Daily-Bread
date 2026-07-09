@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""List chat IDs from users who have messaged your bot"""
+"""List chat IDs from users who have messaged your bot.
+
+Uses getUpdates. This only works when no webhook is set. If the interactive
+bot webhook is active, remove it first or add chat IDs to TELEGRAM_CHAT_IDS
+manually for the daily push.
+"""
 
 import os
 import sys
