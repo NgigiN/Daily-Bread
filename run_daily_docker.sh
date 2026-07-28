@@ -7,7 +7,7 @@
 # Requires: container bible-bot running (docker compose up -d)
 
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")"
 
 if ! docker compose ps --status running --services 2>/dev/null | grep -qx bot; then
   echo "bible-bot (service bot) is not running; starting..."
