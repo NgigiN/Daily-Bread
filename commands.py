@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import html
 import re
 from datetime import date
 from typing import Callable
@@ -14,6 +15,7 @@ from bible_client import (
     parse_reference,
 )
 from config import MAX_CHAPTERS_PER_REQUEST
+from db import add_subscriber, get_subscriber, remove_subscriber, set_delivery_hour
 from formatting import (
     build_passage_messages,
     build_reading_messages,
@@ -27,12 +29,19 @@ DAY_ARGS_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z]+)$")
 
 HELP_TEXT = """📖 <b>Daily Bread Bot</b>
 
-<b>Commands</b>
-/today — today's reading (52-week plan)
-/day 17 may — reading for a date (current year)
-/verse John 3:16 — a verse or range
-/chapter John 3 — a full chapter (or Rom 1-2)
-/help — this message
+<b>Reading commands</b>
+/today - today's reading (52-week plan)
+/day 17 may - reading for a date (current year)
+/verse John 3:16 - a verse or range
+/chapter John 3 - a full chapter (or Rom 1-2)
+
+<b>Daily delivery</b>
+/subscribe - get the daily reading (default 6am EAT)
+/subscribe 8 - subscribe with 8am delivery
+/settime 9 - change your delivery hour
+/unsubscribe - stop daily readings
+
+/help - this message
 
 <b>Examples</b>
 • <code>/verse Jn 3:16</code>
@@ -49,11 +58,11 @@ START_TEXT = """📖 <b>Welcome to Daily Bread</b>
 
 Read the Bible with the 52-week plan, or look up any verse.
 
-/today — today's reading
-/day 17 may — reading for a date
-/verse John 3:16 — a verse
-/chapter John 3 — a chapter
-/help — full help
+/today - today's reading
+/day 17 may - reading for a date
+/verse John 3:16 - a verse
+/chapter John 3 - a chapter
+/help - full help
 
 Made with Love by Sam"""
 
@@ -64,6 +73,9 @@ BOT_COMMANDS = [
     {"command": "day", "description": "Reading for a date, e.g. 17 may"},
     {"command": "verse", "description": "Look up a verse, e.g. John 3:16"},
     {"command": "chapter", "description": "Look up a chapter, e.g. John 3"},
+    {"command": "subscribe", "description": "Get daily readings (e.g. /subscribe 8 for 8am)"},
+    {"command": "unsubscribe", "description": "Stop daily readings"},
+    {"command": "settime", "description": "Change delivery hour, e.g. /settime 9"},
 ]
 
 MONTH_ALIASES: dict[str, int] = {}
@@ -101,7 +113,7 @@ def parse_day_args(args: str) -> date | str:
     month_key = match.group(2).lower()
     month = MONTH_ALIASES.get(month_key)
     if month is None:
-        return f"Unknown month “{match.group(2)}”. Try e.g. may, jan, january."
+        return f'Unknown month "{match.group(2)}". Try e.g. may, jan, january.'
 
     year = get_eat_now().year
     try:
@@ -110,12 +122,29 @@ def parse_day_args(args: str) -> date | str:
         return f"Invalid date: {day_num} {match.group(2)} {year}."
 
 
+def _parse_hour(args: str) -> int | str:
+    """Return int 0-23 on success, or an HTML error string."""
+    args = args.strip()
+    if not args:
+        return "Please provide an hour, e.g. <code>/settime 9</code>."
+    try:
+        hour = int(args)
+    except ValueError:
+        return (
+            f'"{html.escape(args)}" isn\'t a number. '
+            "Please give an hour 0–23, e.g. <code>/settime 9</code>."
+        )
+    if not 0 <= hour <= 23:
+        return "Please give an hour between 0 and 23, e.g. <code>/settime 9</code>."
+    return hour
+
+
 def _reading_for_date(day: date, *, date_label: str | None = None) -> list[str]:
     plan_week, day_name, ref = get_reference_for_date(day)
     if not ref or not day_name:
         return [
             f"No reading configured for week {plan_week}"
-            + (f" — {day_name}" if day_name else "")
+            + (f" - {day_name}" if day_name else "")
             + "."
         ]
 
@@ -133,20 +162,20 @@ def _reading_for_date(day: date, *, date_label: str | None = None) -> list[str]:
     )
 
 
-def handle_start(_args: str) -> list[str]:
+def handle_start(_args: str, chat_id: str = "") -> list[str]:
     return [START_TEXT]
 
 
-def handle_help(_args: str) -> list[str]:
+def handle_help(_args: str, chat_id: str = "") -> list[str]:
     return [HELP_TEXT]
 
 
-def handle_today(_args: str) -> list[str]:
+def handle_today(_args: str, chat_id: str = "") -> list[str]:
     today = get_eat_today()
     return _reading_for_date(today)
 
 
-def handle_day(args: str) -> list[str]:
+def handle_day(args: str, chat_id: str = "") -> list[str]:
     parsed = parse_day_args(args)
     if isinstance(parsed, str):
         return [parsed]
@@ -154,7 +183,7 @@ def handle_day(args: str) -> list[str]:
     return _reading_for_date(parsed, date_label=label)
 
 
-def handle_verse(args: str) -> list[str]:
+def handle_verse(args: str, chat_id: str = "") -> list[str]:
     if not args:
         return ["Usage: <code>/verse John 3:16</code> (include chapter:verse)"]
     if ":" not in args:
@@ -165,13 +194,13 @@ def handle_verse(args: str) -> list[str]:
     result = fetch_verse_reference(args)
     if result is None:
         return [
-            f"Could not find “{args}”. Check the book name and reference."
+            f'Could not find "{args}". Check the book name and reference.'
         ]
     returned_ref, text = result
     return build_verse_messages(returned_ref, text)
 
 
-def handle_chapter(args: str) -> list[str]:
+def handle_chapter(args: str, chat_id: str = "") -> list[str]:
     if not args:
         return ["Usage: <code>/chapter John 3</code> or <code>/chapter Rom 1-2</code>"]
 
@@ -201,7 +230,7 @@ def handle_chapter(args: str) -> list[str]:
     if not chapters or (
         len(chapters) == 1 and "Could not fetch text" in chapters[0][1]
     ):
-        return [f"Could not find “{args}”. Check the book name and chapter."]
+        return [f'Could not find "{args}". Check the book name and chapter.']
 
     assert returned_ref is not None
     return build_passage_messages(
@@ -209,17 +238,65 @@ def handle_chapter(args: str) -> list[str]:
     )
 
 
-HANDLERS: dict[str, Callable[[str], list[str]]] = {
+def handle_subscribe(args: str, chat_id: str = "") -> list[str]:
+    hour = 6
+    if args.strip():
+        result = _parse_hour(args)
+        if isinstance(result, str):
+            return [result]
+        hour = result
+
+    existing = get_subscriber(chat_id)
+    if existing is not None:
+        return [
+            f"You're already subscribed (delivery at {existing['hour_eat']}:00 EAT). "
+            "Use /settime to change your hour, or /unsubscribe to stop."
+        ]
+
+    add_subscriber(chat_id, hour_eat=hour)
+    return [
+        f"✅ You're subscribed! You'll get your daily reading at {hour}:00 EAT. "
+        "Change your time with /settime, or /unsubscribe to stop."
+    ]
+
+
+def handle_unsubscribe(_args: str, chat_id: str = "") -> list[str]:
+    removed = remove_subscriber(chat_id)
+    if removed:
+        return ["You've been unsubscribed. Send /subscribe any time to rejoin. 🙏"]
+    return ["You weren't subscribed. Send /subscribe to sign up for daily readings."]
+
+
+def handle_settime(args: str, chat_id: str = "") -> list[str]:
+    result = _parse_hour(args)
+    if isinstance(result, str):
+        return [result]
+    hour = result
+
+    if get_subscriber(chat_id) is None:
+        return [
+            "You're not subscribed yet. "
+            "Send /subscribe first to sign up for daily readings."
+        ]
+
+    set_delivery_hour(chat_id, hour)
+    return [f"✅ Updated! You'll now get your daily reading at {hour}:00 EAT."]
+
+
+HANDLERS: dict[str, Callable[[str, str], list[str]]] = {
     "start": handle_start,
     "help": handle_help,
     "today": handle_today,
     "day": handle_day,
     "verse": handle_verse,
     "chapter": handle_chapter,
+    "subscribe": handle_subscribe,
+    "unsubscribe": handle_unsubscribe,
+    "settime": handle_settime,
 }
 
 
-def handle_message_text(text: str) -> list[str] | None:
+def handle_message_text(text: str, chat_id: str = "") -> list[str] | None:
     """
     Route a message body to a command handler.
     Returns message list, or None if the text is not a known command.
@@ -233,4 +310,4 @@ def handle_message_text(text: str) -> list[str] | None:
         return [
             f"Unknown command /{name}. Try /help for the list of commands."
         ]
-    return handler(args)
+    return handler(args, chat_id)

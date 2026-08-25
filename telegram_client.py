@@ -11,7 +11,6 @@ from config import (
     SEND_DELAY_SEC,
     TELEGRAM_API,
     get_bot_token,
-    get_chat_ids,
     is_placeholder_token,
 )
 from formatting import split_message
@@ -76,23 +75,6 @@ def send_messages(
         log_event("send_failed", chat_id=chat_id, error=str(e))
         return False
 
-
-def send_to_configured_chats(messages: str | list[str]) -> bool:
-    """Daily push: send to all TELEGRAM_CHAT_IDS."""
-    token = get_bot_token()
-    chat_ids = get_chat_ids()
-    if is_placeholder_token(token):
-        log_event("send_failed", reason="missing_or_placeholder_token")
-        return False
-    if not chat_ids:
-        log_event("send_failed", reason="no_chat_ids")
-        return False
-
-    sent_any = False
-    for chat_id in chat_ids:
-        if send_messages(chat_id, messages, token=token):
-            sent_any = True
-    return sent_any
 
 
 def telegram_api(
