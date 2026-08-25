@@ -316,7 +316,7 @@ No changes to `run_daily_docker.sh` itself — the fix from the earlier session 
 
 1. Deploy new code with `./data:/data` volume
 2. Container restarts — existing `TELEGRAM_CHAT_IDS` are seeded into DB at hour 6
-3. Verify: `docker exec bible-bot sqlite3 /data/bible.db "SELECT * FROM subscribers;"`
+3. Verify: `docker compose exec -T bot python -c "import sqlite3,os; rows=sqlite3.connect(os.getenv('DB_PATH','/data/bible.db')).execute('SELECT chat_id,hour_eat,source FROM subscribers').fetchall(); print(rows)"`
 4. Once confirmed, remove `TELEGRAM_CHAT_IDS` from `.env` and redeploy
 5. Update cron entry from `30 4 * * *` to `0 * * * *`
 

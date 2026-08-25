@@ -1187,7 +1187,7 @@ docker ps | grep bible-bot
 - [ ] **Step 3: Verify DB was created and seeded**
 
 ```bash
-docker exec bible-bot sqlite3 /data/bible.db "SELECT * FROM subscribers;"
+docker compose exec -T bot python -c "import sqlite3,os; rows=sqlite3.connect(os.getenv('DB_PATH','/data/bible.db')).execute('SELECT * FROM subscribers').fetchall(); print(rows)"
 ```
 
 Expected: one row per chat ID from `TELEGRAM_CHAT_IDS` in `.env`, with `hour_eat=6` and `source=env_seed`.
@@ -1209,7 +1209,7 @@ Send `/subscribe` (no hour). Expected reply: confirms 6:00 EAT default.
 Verify in DB:
 
 ```bash
-docker exec bible-bot sqlite3 /data/bible.db "SELECT chat_id, hour_eat, source FROM subscribers;"
+docker compose exec -T bot python -c "import sqlite3,os; rows=sqlite3.connect(os.getenv('DB_PATH','/data/bible.db')).execute('SELECT chat_id,hour_eat,source FROM subscribers').fetchall(); print(rows)"
 ```
 
 - [ ] **Step 5: Test dry-run dispatch manually**
