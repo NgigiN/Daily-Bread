@@ -50,8 +50,7 @@ async def lifespan(_app: FastAPI):
     if not webhook_url:
         log_event(
             "startup_warning",
-            reason="WEBHOOK_URL empty — Telegram will not deliver messages; "
-            "set WEBHOOK_URL=https://bible.samtama.lol/webhook",
+            reason="WEBHOOK_URL empty",
         )
     else:
         try:
@@ -63,7 +62,7 @@ async def lifespan(_app: FastAPI):
         except Exception as e:
             log_event("webhook_register_failed", error=str(e), url=webhook_url)
 
-    from db import init_db, seed_from_env
+    from db import init_db, seed_from_env, count_subscribers
     from config import get_chat_ids
 
     try:
@@ -71,6 +70,8 @@ async def lifespan(_app: FastAPI):
         seeded = seed_from_env(get_chat_ids())
         if seeded:
             log_event("subscribers_seeded_from_env", count=seeded)
+        total = count_subscribers()
+        log_event("subscriber_count", count=total)
     except Exception as e:
         log_event("db_init_failed", error=str(e))
 
@@ -93,7 +94,6 @@ app = FastAPI(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Structured access logs → Docker stdout → Grafana Alloy job=docker."""
     started = time.perf_counter()
     response = await call_next(request)
     elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -113,12 +113,6 @@ def health() -> dict[str, str]:
 
 
 def _verify_secret(header_value: str | None) -> None:
-    """
-    Compare X-Telegram-Bot-Api-Secret-Token to WEBHOOK_SECRET.
-
-    Only Telegram's servers send this header (after setWebhook with secret_token).
-    End users never supply it. Mismatch → 403 (forged or misconfigured webhook).
-    """
     expected = get_webhook_secret()
     if not expected:
         return
@@ -200,8 +194,6 @@ async def webhook(
             error=str(e),
             text=text[:80],
         )
-        # Still 200 so Telegram does not hammer retries for app bugs;
-        # try a short error reply.
         try:
             send_messages(
                 chat_id,

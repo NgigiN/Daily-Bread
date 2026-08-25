@@ -126,3 +126,13 @@ def get_subscriber(chat_id: str) -> dict[str, Any] | None:
         return dict(row) if row else None
     finally:
         conn.close()
+
+
+def count_subscribers() -> int:
+    """Return total number of subscribers."""
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM subscribers").fetchone()
+        return row[0] if row else 0
+    finally:
+        conn.close()
