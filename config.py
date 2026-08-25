@@ -71,3 +71,7 @@ def get_app_port() -> int:
 
 def is_placeholder_token(token: str) -> bool:
     return not token or token.startswith("123456789")
+
+
+def get_db_path() -> str:
+    return os.getenv("DB_PATH", "/data/bible.db").strip() or "/data/bible.db"
