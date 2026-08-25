@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import html
 import re
 from datetime import date
 from typing import Callable
@@ -130,8 +131,8 @@ def _parse_hour(args: str) -> int | str:
         hour = int(args)
     except ValueError:
         return (
-            f'"{args}" isn\'t a number. '
-            "Please give an hour 0-23, e.g. <code>/settime 9</code>."
+            f'"{html.escape(args)}" isn\'t a number. '
+            "Please give an hour 0–23, e.g. <code>/settime 9</code>."
         )
     if not 0 <= hour <= 23:
         return "Please give an hour between 0 and 23, e.g. <code>/settime 9</code>."

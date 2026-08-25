@@ -66,10 +66,13 @@ async def lifespan(_app: FastAPI):
     from db import init_db, seed_from_env
     from config import get_chat_ids
 
-    init_db()
-    seeded = seed_from_env(get_chat_ids())
-    if seeded:
-        log_event("subscribers_seeded_from_env", count=seeded)
+    try:
+        init_db()
+        seeded = seed_from_env(get_chat_ids())
+        if seeded:
+            log_event("subscribers_seeded_from_env", count=seeded)
+    except Exception as e:
+        log_event("db_init_failed", error=str(e))
 
     log_event(
         "startup_ready",

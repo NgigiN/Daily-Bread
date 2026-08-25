@@ -33,7 +33,13 @@ def init_db() -> None:
 
 
 def seed_from_env(chat_ids: list[str], *, default_hour: int = 6) -> int:
-    """Insert chat_ids into an empty table (source='env_seed'). No-ops if table has rows."""
+    """Insert chat_ids into an empty table (source='env_seed'). No-ops if table has rows.
+
+    WARNING: This only seeds when the table is completely empty. If all subscribers
+    later unsubscribe, the next restart will re-seed from TELEGRAM_CHAT_IDS.
+    To prevent this, remove TELEGRAM_CHAT_IDS from .env after the first deploy
+    (see deploy checklist Task 5 Step 7).
+    """
     if not chat_ids:
         return 0
     conn = _connect()

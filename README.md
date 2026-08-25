@@ -29,9 +29,12 @@ Grafana Alloy (VPS) ──► Grafana Cloud Loki
 | `/day` | `/day 17 may` | Plan for date (current year) |
 | `/verse` | `/verse John 3:16` | Verse / range |
 | `/chapter` | `/chapter Rom 1-2` | Chapter(s), max 6 |
+| `/subscribe` | `/subscribe 8` | Subscribe to daily readings (optional hour) |
+| `/unsubscribe` | | Stop daily readings |
+| `/settime` | `/settime 9` | Change delivery hour (EAT) |
 
 Interactive use is **open** to anyone who starts the bot.  
-`TELEGRAM_CHAT_IDS` is only for the **daily cron push**.
+`TELEGRAM_CHAT_IDS` seeds the subscriber DB on **first startup only** (when the table is empty).
 
 ---
 
@@ -74,8 +77,9 @@ docker logs bible-bot --tail 50
 ```bash
 chmod +x deploy/run_daily_docker.sh
 
-# crontab -e  (example 06:00 server time)
-0 6 * * * /path/to/bible/deploy/run_daily_docker.sh >> /path/to/bible/daily_bread.log 2>&1
+# crontab -e
+# Runs every hour; each subscriber receives their message at their chosen hour (EAT).
+0 * * * *  ~/opt/bible/run_daily_docker.sh >> ~/opt/bible/daily_bread.log 2>&1
 ```
 
 This runs `docker compose exec -T bot python daily_bread.py` (same image, same `.env`).
