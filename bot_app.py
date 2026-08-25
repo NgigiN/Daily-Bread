@@ -63,6 +63,14 @@ async def lifespan(_app: FastAPI):
         except Exception as e:
             log_event("webhook_register_failed", error=str(e), url=webhook_url)
 
+    from db import init_db, seed_from_env
+    from config import get_chat_ids
+
+    init_db()
+    seeded = seed_from_env(get_chat_ids())
+    if seeded:
+        log_event("subscribers_seeded_from_env", count=seeded)
+
     log_event(
         "startup_ready",
         webhook_url=webhook_url or None,
@@ -164,7 +172,7 @@ async def webhook(
     )
 
     try:
-        replies = handle_message_text(text)
+        replies = handle_message_text(text, chat_id=str(chat_id))
         if replies is None:
             if text.startswith("/"):
                 replies = handle_message_text("/help") or [
