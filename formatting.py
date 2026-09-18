@@ -88,3 +88,7 @@ def build_reading_messages(
 
 def build_verse_messages(returned_ref: str, text: str) -> list[str]:
     return build_chapter_messages(returned_ref, text) + [FOOTER]
+
+
+def build_reflection_message(prompt: str) -> str:
+    return f"🤔 <b>Reflect</b>\n{html.escape(prompt)}"
