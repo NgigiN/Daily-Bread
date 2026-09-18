@@ -121,3 +121,37 @@ def test_main_does_not_send_to_non_matching_hour(monkeypatch):
 
     assert "111" in sent_to
     assert "222" not in sent_to
+
+
+def test_main_includes_reflection_message_before_footer(monkeypatch):
+    from db import add_subscriber
+    add_subscriber("111", hour_eat=6)
+
+    monkeypatch.setattr("daily_bread._get_current_hour_eat", lambda: 6)
+
+    sent_messages = []
+
+    def mock_send(chat_id, messages, **kwargs):
+        sent_messages.extend(messages)
+        return True
+
+    monkeypatch.setattr("daily_bread.send_messages", mock_send)
+    monkeypatch.setattr(
+        "daily_bread.get_reference_for_today",
+        lambda today: (1, "Monday", "Gen 1"),
+    )
+    monkeypatch.setattr(
+        "daily_bread.fetch_bible_text",
+        lambda ref: ("Gen 1", [("1", "In the beginning God created...")]),
+    )
+    monkeypatch.setattr(
+        "daily_bread.build_reading_messages",
+        lambda *a, **kw: ["reading message", "footer"],
+    )
+    monkeypatch.setattr("daily_bread.prompt_for_date", lambda day: "Test prompt?")
+
+    import daily_bread
+    daily_bread.main()
+
+    assert sent_messages[-1] == "footer"
+    assert "Test prompt?" in sent_messages[-2]
