@@ -158,3 +158,22 @@ def test_handle_message_text_routes_unsubscribe():
     msgs = handle_message_text("/unsubscribe", chat_id="42")
     assert msgs is not None
     assert "unsubscribed" in msgs[0].lower()
+
+
+# --- reflection prompt insertion ---
+
+def test_handle_today_includes_reflection_prompt(monkeypatch):
+    import commands
+    from formatting import FOOTER
+
+    monkeypatch.setattr(commands, "get_reference_for_date", lambda day: (1, "Monday", "Gen 1"))
+    monkeypatch.setattr(
+        commands, "fetch_bible_text", lambda ref: ("Gen 1", [("1", "In the beginning...")])
+    )
+    monkeypatch.setattr(commands, "prompt_for_date", lambda day: "Test reflection prompt?")
+
+    from commands import handle_today
+    msgs = handle_today("", chat_id="42")
+
+    assert "Test reflection prompt?" in msgs[-2]
+    assert msgs[-1] == FOOTER

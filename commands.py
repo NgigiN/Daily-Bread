@@ -19,9 +19,11 @@ from db import add_subscriber, get_subscriber, remove_subscriber, set_delivery_h
 from formatting import (
     build_passage_messages,
     build_reading_messages,
+    build_reflection_message,
     build_verse_messages,
 )
 from plan_reader import get_eat_now, get_eat_today, get_reference_for_date
+from prompts import prompt_for_date
 
 # /command or /command@BotName, optional args
 COMMAND_RE = re.compile(r"^/([a-zA-Z0-9_]+)(?:@\w+)?(?:\s+(.*))?$", re.DOTALL)
@@ -153,13 +155,15 @@ def _reading_for_date(day: date, *, date_label: str | None = None) -> list[str]:
         return [f"Could not load reading for <b>{ref}</b>."]
 
     assert returned_ref is not None
-    return build_reading_messages(
+    messages = build_reading_messages(
         plan_week,
         day_name,
         returned_ref,
         chapters,
         date_label=date_label,
     )
+    messages.insert(-1, build_reflection_message(prompt_for_date(day)))
+    return messages
 
 
 def handle_start(_args: str, chat_id: str = "") -> list[str]:
