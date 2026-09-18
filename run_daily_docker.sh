@@ -16,3 +16,4 @@ if ! docker compose ps --status running --services 2>/dev/null | grep -qx bot; t
 fi
 
 docker compose exec -T bot python daily_bread.py
+docker compose exec -T bot python nudge_check.py
