@@ -15,7 +15,7 @@ from bible_client import (
     parse_reference,
 )
 from config import MAX_CHAPTERS_PER_REQUEST
-from db import add_subscriber, get_subscriber, remove_subscriber, set_delivery_hour
+from db import add_subscriber, get_streak, get_subscriber, remove_subscriber, set_delivery_hour
 from formatting import (
     build_passage_messages,
     build_reading_messages,
@@ -42,6 +42,7 @@ HELP_TEXT = """📖 <b>Daily Bread Bot</b>
 /subscribe 8 - subscribe with 8am delivery
 /settime 9 - change your delivery hour
 /unsubscribe - stop daily readings
+/streak - see your current and longest streak
 
 /help - this message
 
@@ -78,6 +79,7 @@ BOT_COMMANDS = [
     {"command": "subscribe", "description": "Get daily readings (e.g. /subscribe 8 for 8am)"},
     {"command": "unsubscribe", "description": "Stop daily readings"},
     {"command": "settime", "description": "Change delivery hour, e.g. /settime 9"},
+    {"command": "streak", "description": "See your current and longest reading streak"},
 ]
 
 MONTH_ALIASES: dict[str, int] = {}
@@ -287,6 +289,19 @@ def handle_settime(args: str, chat_id: str = "") -> list[str]:
     return [f"✅ Updated! You'll now get your daily reading at {hour}:00 EAT."]
 
 
+def handle_streak(_args: str, chat_id: str = "") -> list[str]:
+    if get_subscriber(chat_id) is None:
+        return ["You're not subscribed yet. Send /subscribe to start building a streak."]
+
+    current, longest, total = get_streak(chat_id, get_eat_today())
+    return [
+        "🔥 <b>Your streak</b>\n"
+        f"Current: {current} day{'s' if current != 1 else ''}\n"
+        f"Longest: {longest} day{'s' if longest != 1 else ''}\n"
+        f"Total days active: {total}"
+    ]
+
+
 HANDLERS: dict[str, Callable[[str, str], list[str]]] = {
     "start": handle_start,
     "help": handle_help,
@@ -297,6 +312,7 @@ HANDLERS: dict[str, Callable[[str, str], list[str]]] = {
     "subscribe": handle_subscribe,
     "unsubscribe": handle_unsubscribe,
     "settime": handle_settime,
+    "streak": handle_streak,
 }
 
 
