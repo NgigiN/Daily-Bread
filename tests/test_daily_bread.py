@@ -53,7 +53,8 @@ def test_main_exits_early_when_no_subscribers(monkeypatch, capsys):
     daily_bread.main()
 
     captured = capsys.readouterr()
-    assert "nothing to send" in captured.out.lower() or "no subscribers" in captured.out.lower()
+    assert "dispatch_no_subscribers" in captured.out
+    assert '"hour":3' in captured.out
 
 
 def test_main_sends_to_matching_subscribers(monkeypatch):
