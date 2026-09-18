@@ -35,6 +35,14 @@ def init_db() -> None:
                 PRIMARY KEY (chat_id, activity_date)
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS nudges (
+                chat_id     TEXT    NOT NULL,
+                nudge_date  TEXT    NOT NULL,
+                sent_at     TEXT    NOT NULL,
+                PRIMARY KEY (chat_id, nudge_date)
+            )
+        """)
         conn.commit()
     finally:
         conn.close()
@@ -214,3 +222,42 @@ def get_streak(chat_id: str, today: date) -> tuple[int, int, int]:
             run = 1
 
     return current, longest, total
+
+
+def record_nudge(chat_id: str, nudge_date: str) -> None:
+    """Log that a nudge was sent to chat_id on nudge_date. Idempotent."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO nudges (chat_id, nudge_date, sent_at) VALUES (?, ?, ?)",
+            (chat_id, nudge_date, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_subscribers_for_nudge(
+    *, current_hour: int, delay_hours: int, activity_date: str, nudge_date: str
+) -> list[dict[str, Any]]:
+    """
+    Return subscriber rows {chat_id, hour_eat} where:
+      (hour_eat + delay_hours) % 24 == current_hour
+      AND no activity row for activity_date
+      AND no nudges row for nudge_date
+    """
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT chat_id, hour_eat FROM subscribers
+            WHERE (hour_eat + ?) % 24 = ?
+              AND chat_id NOT IN (SELECT chat_id FROM activity WHERE activity_date = ?)
+              AND chat_id NOT IN (SELECT chat_id FROM nudges WHERE nudge_date = ?)
+            """,
+            (delay_hours, current_hour, activity_date, nudge_date),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()

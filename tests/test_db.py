@@ -225,3 +225,67 @@ def test_get_streak_only_counts_this_chat_id():
     record_activity("222", "2026-09-18")
     record_activity("222", "2026-09-17")
     assert get_streak("111", date(2026, 9, 18)) == (1, 1, 1)
+
+
+# --- nudge eligibility ---
+
+def test_get_subscribers_for_nudge_matches_hour():
+    from db import add_subscriber, get_subscribers_for_nudge
+    add_subscriber("111", hour_eat=6)
+    result = get_subscribers_for_nudge(
+        current_hour=14, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
+    )
+    assert [r["chat_id"] for r in result] == ["111"]
+
+
+def test_get_subscribers_for_nudge_wraps_past_midnight():
+    from db import add_subscriber, get_subscribers_for_nudge
+    add_subscriber("111", hour_eat=20)
+    result = get_subscribers_for_nudge(
+        current_hour=4, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
+    )
+    assert [r["chat_id"] for r in result] == ["111"]
+
+
+def test_get_subscribers_for_nudge_excludes_non_matching_hour():
+    from db import add_subscriber, get_subscribers_for_nudge
+    add_subscriber("111", hour_eat=6)
+    result = get_subscribers_for_nudge(
+        current_hour=9, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
+    )
+    assert result == []
+
+
+def test_get_subscribers_for_nudge_excludes_active_subscriber():
+    from db import add_subscriber, record_activity, get_subscribers_for_nudge
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-18")
+    result = get_subscribers_for_nudge(
+        current_hour=14, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
+    )
+    assert result == []
+
+
+def test_get_subscribers_for_nudge_excludes_already_nudged():
+    from db import add_subscriber, record_nudge, get_subscribers_for_nudge
+    add_subscriber("111", hour_eat=6)
+    record_nudge("111", "2026-09-18")
+    result = get_subscribers_for_nudge(
+        current_hour=14, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
+    )
+    assert result == []
+
+
+def test_get_subscribers_for_nudge_returns_hour_eat():
+    from db import add_subscriber, get_subscribers_for_nudge
+    add_subscriber("111", hour_eat=6)
+    result = get_subscribers_for_nudge(
+        current_hour=14, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
+    )
+    assert result[0]["hour_eat"] == 6
+
+
+def test_record_nudge_is_idempotent():
+    from db import record_nudge
+    record_nudge("111", "2026-09-18")
+    record_nudge("111", "2026-09-18")  # must not raise
