@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from config import get_db_path
@@ -25,6 +25,14 @@ def init_db() -> None:
                 hour_eat   INTEGER NOT NULL DEFAULT 6,
                 joined_at  TEXT    NOT NULL,
                 source     TEXT    NOT NULL DEFAULT 'command'
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS activity (
+                chat_id        TEXT    NOT NULL,
+                activity_date  TEXT    NOT NULL,
+                first_seen_at  TEXT    NOT NULL,
+                PRIMARY KEY (chat_id, activity_date)
             )
         """)
         conn.commit()
@@ -136,3 +144,73 @@ def count_subscribers() -> int:
         return row[0] if row else 0
     finally:
         conn.close()
+
+
+def record_activity(chat_id: str, activity_date: str) -> None:
+    """Log an interaction for chat_id on activity_date (YYYY-MM-DD). Idempotent."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO activity (chat_id, activity_date, first_seen_at)"
+            " VALUES (?, ?, ?)",
+            (chat_id, activity_date, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def has_activity(chat_id: str, activity_date: str) -> bool:
+    """True if chat_id has an activity row for activity_date."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM activity WHERE chat_id = ? AND activity_date = ?",
+            (chat_id, activity_date),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def get_streak(chat_id: str, today: date) -> tuple[int, int, int]:
+    """
+    Return (current_streak, longest_streak, total_days_active) for chat_id.
+
+    current_streak is 0 if the most recent activity date isn't today or
+    yesterday relative to `today`.
+    """
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT activity_date FROM activity WHERE chat_id = ? ORDER BY activity_date DESC",
+            (chat_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    dates = [date.fromisoformat(row[0]) for row in rows]
+    total = len(dates)
+    if not dates:
+        return 0, 0, 0
+
+    current = 0
+    if dates[0] in (today, today - timedelta(days=1)):
+        current = 1
+        for i in range(1, len(dates)):
+            if dates[i - 1] - dates[i] == timedelta(days=1):
+                current += 1
+            else:
+                break
+
+    ascending = sorted(dates)
+    longest = run = 1
+    for i in range(1, len(ascending)):
+        if ascending[i] - ascending[i - 1] == timedelta(days=1):
+            run += 1
+            longest = max(longest, run)
+        else:
+            run = 1
+
+    return current, longest, total
