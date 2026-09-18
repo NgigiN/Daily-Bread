@@ -19,7 +19,9 @@ from config import (
     get_webhook_url,
     is_placeholder_token,
 )
+from db import record_activity
 from logutil import log_event
+from plan_reader import get_eat_today
 from telegram_client import (
     register_bot_webhook,
     send_messages,
@@ -130,6 +132,14 @@ def _extract_message(update: dict[str, Any]) -> dict[str, Any] | None:
     return update.get("message") or update.get("edited_message")
 
 
+def _extract_reaction_chat_id(update: dict[str, Any]) -> int | None:
+    reaction = update.get("message_reaction")
+    if not reaction:
+        return None
+    chat = reaction.get("chat") or {}
+    return chat.get("id")
+
+
 @app.post("/webhook")
 async def webhook(
     request: Request,
@@ -144,6 +154,13 @@ async def webhook(
         raise HTTPException(status_code=400, detail="Invalid JSON") from None
 
     update_id = update.get("update_id")
+
+    reaction_chat_id = _extract_reaction_chat_id(update)
+    if reaction_chat_id is not None:
+        record_activity(str(reaction_chat_id), get_eat_today().isoformat())
+        log_event("webhook_reaction", update_id=update_id, chat_id=reaction_chat_id)
+        return JSONResponse({"ok": True})
+
     message = _extract_message(update)
     if not message:
         log_event("webhook_ignored", reason="no_message", update_id=update_id)
@@ -152,6 +169,10 @@ async def webhook(
     chat = message.get("chat") or {}
     chat_id = chat.get("id")
     text = (message.get("text") or "").strip()
+
+    if chat_id is not None:
+        record_activity(str(chat_id), get_eat_today().isoformat())
+
     if chat_id is None or not text:
         log_event(
             "webhook_ignored",

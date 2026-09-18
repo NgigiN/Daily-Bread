@@ -16,7 +16,7 @@ from config import (
 from formatting import split_message
 from logutil import log_event
 
-ALLOWED_WEBHOOK_UPDATES = ["message", "edited_message"]
+ALLOWED_WEBHOOK_UPDATES = ["message", "edited_message", "message_reaction"]
 
 
 def _url(token: str, method: str) -> str:
