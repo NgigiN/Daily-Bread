@@ -15,9 +15,10 @@ from zoneinfo import ZoneInfo
 from bible_client import fetch_bible_text
 from config import TIMEZONE
 from db import get_subscribers_for_hour
-from formatting import build_reading_messages
+from formatting import build_reading_messages, build_reflection_message
 from logutil import log_event
 from plan_reader import get_eat_today, get_reference_for_today
+from prompts import prompt_for_date
 from telegram_client import send_messages
 
 
@@ -66,6 +67,7 @@ def main() -> None:
         return
 
     messages = build_reading_messages(plan_week, day_name, returned_ref, chapters)
+    messages.insert(-1, build_reflection_message(prompt_for_date(today)))
 
     sent = 0
     for chat_id in chat_ids:

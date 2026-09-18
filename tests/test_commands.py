@@ -158,3 +158,69 @@ def test_handle_message_text_routes_unsubscribe():
     msgs = handle_message_text("/unsubscribe", chat_id="42")
     assert msgs is not None
     assert "unsubscribed" in msgs[0].lower()
+
+
+# --- reflection prompt insertion ---
+
+def test_handle_today_includes_reflection_prompt(monkeypatch):
+    import commands
+    from formatting import FOOTER
+
+    monkeypatch.setattr(commands, "get_reference_for_date", lambda day: (1, "Monday", "Gen 1"))
+    monkeypatch.setattr(
+        commands, "fetch_bible_text", lambda ref: ("Gen 1", [("1", "In the beginning...")])
+    )
+    monkeypatch.setattr(commands, "prompt_for_date", lambda day: "Test reflection prompt?")
+
+    from commands import handle_today
+    msgs = handle_today("", chat_id="42")
+
+    assert "Test reflection prompt?" in msgs[-2]
+    assert msgs[-1] == FOOTER
+
+
+# --- /streak ---
+
+def test_handle_streak_not_subscribed():
+    from commands import handle_streak
+    msgs = handle_streak("", chat_id="42")
+    assert "not subscribed" in msgs[0].lower()
+
+
+def test_handle_streak_shows_current_and_longest(monkeypatch):
+    from commands import handle_subscribe, handle_streak
+    from db import record_activity
+    from datetime import date
+    import commands
+
+    handle_subscribe("", chat_id="42")
+    record_activity("42", "2026-09-17")
+    record_activity("42", "2026-09-18")
+    monkeypatch.setattr(commands, "get_eat_today", lambda: date(2026, 9, 18))
+
+    msgs = handle_streak("", chat_id="42")
+    assert "Current: 2 days" in msgs[0]
+    assert "Longest: 2 days" in msgs[0]
+    assert "Total days active: 2" in msgs[0]
+
+
+def test_handle_streak_singular_day_wording(monkeypatch):
+    from commands import handle_subscribe, handle_streak
+    from db import record_activity
+    from datetime import date
+    import commands
+
+    handle_subscribe("", chat_id="42")
+    record_activity("42", "2026-09-18")
+    monkeypatch.setattr(commands, "get_eat_today", lambda: date(2026, 9, 18))
+
+    msgs = handle_streak("", chat_id="42")
+    assert "Current: 1 day\n" in msgs[0]
+
+
+def test_handle_message_text_routes_streak():
+    from commands import handle_message_text, handle_subscribe
+    handle_subscribe("", chat_id="42")
+    msgs = handle_message_text("/streak", chat_id="42")
+    assert msgs is not None
+    assert "streak" in msgs[0].lower()
