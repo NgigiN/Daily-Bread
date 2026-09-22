@@ -4,9 +4,11 @@
 # Required GitHub secrets:
 #   SERVER_HOST      — VPS hostname or IP
 #   SERVER_USER      — SSH user (e.g. deploy)
-#   SERVER_PORT      — SSH port (e.g. 22)
-#   SERVER_SSH_KEY   — private key (full PEM)
-#   PROJECT_PATH     — absolute path to this repo on the VPS
+#   SERVER_PORT      — SSH port
+#   SERVER_SSH_KEY   — the ci-bible ed25519 private key (project-scoped, see below)
+#
+# PROJECT_PATH is no longer used: the path lives in the VPS-side deploy script, because
+# this key can no longer send arbitrary commands that would need it.
 
 name: Deploy
 
@@ -25,45 +27,20 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-          # Fail fast if secrets missing / host unreachable
-          command_timeout: 12m
-          script_stop: true
-          script: |
-            set -euo pipefail
-            cd "${{ secrets.PROJECT_PATH }}"
-
-            echo "==> git pull"
-            git fetch --depth=1 origin main
-            git checkout main
-            git reset --hard origin/main
-
-            echo "==> docker compose build & up"
-            # BuildKit + reuse layers from bible-bot:latest when present
-            DOCKER_BUILDKIT=1 docker compose build
-            # --wait blocks until the container healthcheck passes (lifespan + Telegram API).
-            docker compose up -d --remove-orphans --wait --wait-timeout 120
-
-            echo "==> health"
-            # Belt-and-suspenders: host port can lag briefly after container reports healthy.
-            for attempt in $(seq 1 10); do
-              if curl -fsS --max-time 5 http://127.0.0.1:5555/health; then
-                echo
-                break
-              fi
-              if [ "$attempt" -eq 10 ]; then
-                echo "health check failed after 10 attempts"
-                docker compose ps
-                docker compose logs --tail=50 bot
-                exit 1
-              fi
-              echo "attempt ${attempt}/10: not ready yet, retrying in 3s..."
-              sleep 3
-            done
-            docker compose ps
-            echo "==> deploy OK"
+        # Plain `ssh`, not appleboy/ssh-action. SERVER_SSH_KEY is now a per-project key whose
+        # VPS-side authorized_keys entry carries a forced command
+        # (infra-ops: docs/superpowers/specs/2026-09-22-ci-key-isolation.md). The only thing
+        # this may send is the bare verb `deploy`; an action that wraps the script in a shell
+        # invocation would be refused by the dispatcher.
+        #
+        # The deploy steps moved to the VPS verbatim at
+        #   /home/deploy/deploy-scripts/bible.sh
+        # Edit them there, not here. This key cannot read any other project's files.
+        run: |
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          ssh-keyscan -p "${{ secrets.SERVER_PORT }}" -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
+              -p "${{ secrets.SERVER_PORT }}" \
+              "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" deploy
