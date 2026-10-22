@@ -10,6 +10,32 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-25-subscriber-store-design.md`
 
+## Execution record
+
+**Shipped** 2026-08-25 in #1, with follow-ups in `3514b9a`. Marked complete
+2026-10-22.
+
+- **Tasks 1-4 (code).** `db.py`, `get_db_path()`, the `/subscribe`,
+  `/unsubscribe` and `/settime` handlers, DB-based dispatch in `daily_bread.py`,
+  the compose volume and the Dockerfile copy are present and committed. The
+  suite passes.
+- **Task 5 (live).** Confirmed on the host 2026-10-22: the cron entry is
+  `0 * * * *`, the container is healthy, the `subscribers` table exists, and the
+  one current subscriber carries `source='command'`, so `/subscribe` worked
+  live. A second chat has nudge history but no subscriber row, so
+  `/unsubscribe` worked live too.
+
+### Deviations
+
+- **Step 7 is superseded rather than done.** Instead of relying on someone
+  deleting `TELEGRAM_CHAT_IDS` from a deployed `.env`, the code that read it was
+  removed 2026-10-22: `seed_from_env` and `get_chat_ids` are gone, so the
+  variable is inert wherever it still exists. The hazard the step guarded
+  against — a restart re-adding everyone after they all unsubscribe — is now
+  closed in code rather than by convention.
+- The original env seeding can no longer be re-verified retrospectively. The
+  surviving subscriber joined by command on 2026-08-30.
+
 ## Global Constraints
 
 - Python 3.12; all new code must be compatible
@@ -67,17 +93,17 @@
   - `get_subscribers_for_hour(hour_eat: int) -> list[str]` in `db.py`
   - `get_subscriber(chat_id: str) -> dict | None` in `db.py`
 
-- [ ] **Step 1: Create `requirements-dev.txt`**
+- [x] **Step 1: Create `requirements-dev.txt`**
 
 ```
 pytest==8.3.5
 ```
 
-- [ ] **Step 2: Create `tests/__init__.py`**
+- [x] **Step 2: Create `tests/__init__.py`**
 
 Empty file — just `touch tests/__init__.py`.
 
-- [ ] **Step 3: Add `get_db_path()` to `config.py`**
+- [x] **Step 3: Add `get_db_path()` to `config.py`**
 
 Add after the `is_placeholder_token` function:
 
@@ -86,7 +112,7 @@ def get_db_path() -> str:
     return os.getenv("DB_PATH", "/data/bible.db").strip() or "/data/bible.db"
 ```
 
-- [ ] **Step 4: Write failing tests for `db.py`**
+- [x] **Step 4: Write failing tests for `db.py`**
 
 Create `tests/test_db.py`:
 
@@ -231,7 +257,7 @@ def test_seed_from_env_skips_blank_strings():
     assert count == 2
 ```
 
-- [ ] **Step 5: Run tests — confirm they all fail**
+- [x] **Step 5: Run tests — confirm they all fail**
 
 ```bash
 ./venv/bin/pip install -r requirements-dev.txt
@@ -240,7 +266,7 @@ def test_seed_from_env_skips_blank_strings():
 
 Expected: `ModuleNotFoundError: No module named 'db'` (db.py doesn't exist yet).
 
-- [ ] **Step 6: Create `db.py`**
+- [x] **Step 6: Create `db.py`**
 
 ```python
 """SQLite subscriber store. One table, stdlib sqlite3 only."""
@@ -367,7 +393,7 @@ def get_subscriber(chat_id: str) -> dict[str, Any] | None:
         conn.close()
 ```
 
-- [ ] **Step 7: Run tests — confirm they all pass**
+- [x] **Step 7: Run tests — confirm they all pass**
 
 ```bash
 ./venv/bin/pytest tests/test_db.py -v
@@ -375,7 +401,7 @@ def get_subscriber(chat_id: str) -> dict[str, Any] | None:
 
 Expected: all 19 tests PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add requirements-dev.txt tests/__init__.py tests/test_db.py config.py db.py
@@ -403,7 +429,7 @@ git commit -m "feat: add SQLite subscriber store and DB_PATH config"
   - `handle_unsubscribe(args: str, chat_id: str = "") -> list[str]`
   - `handle_settime(args: str, chat_id: str = "") -> list[str]`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_commands.py`:
 
@@ -570,7 +596,7 @@ def test_handle_message_text_routes_unsubscribe():
     assert "unsubscribed" in msgs[0].lower()
 ```
 
-- [ ] **Step 2: Run tests — confirm they fail**
+- [x] **Step 2: Run tests — confirm they fail**
 
 ```bash
 ./venv/bin/pytest tests/test_commands.py -v
@@ -578,7 +604,7 @@ def test_handle_message_text_routes_unsubscribe():
 
 Expected: most tests fail with `TypeError` (missing `chat_id`) or `ImportError` (new handlers not defined yet).
 
-- [ ] **Step 3: Update `commands.py`**
+- [x] **Step 3: Update `commands.py`**
 
 **3a — Add imports at top of file** (after existing imports):
 
@@ -744,7 +770,7 @@ Max {max_ch} chapters per /chapter request.
 Text via bible-api.com (WEB).""".format(max_ch=MAX_CHAPTERS_PER_REQUEST)
 ```
 
-- [ ] **Step 4: Run tests — confirm they pass**
+- [x] **Step 4: Run tests — confirm they pass**
 
 ```bash
 ./venv/bin/pytest tests/test_commands.py -v
@@ -752,7 +778,7 @@ Text via bible-api.com (WEB).""".format(max_ch=MAX_CHAPTERS_PER_REQUEST)
 
 Expected: all 22 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add commands.py tests/test_commands.py
@@ -776,7 +802,7 @@ git commit -m "feat: add /subscribe, /unsubscribe, /settime commands"
   - `_get_current_hour_eat() -> int` in `daily_bread.py` (testable seam)
   - `_get_recipients() -> list[str]` in `daily_bread.py` (testable seam)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_daily_bread.py`:
 
@@ -905,7 +931,7 @@ def test_main_does_not_send_to_non_matching_hour(monkeypatch):
     assert "222" not in sent_to
 ```
 
-- [ ] **Step 2: Run tests — confirm they fail**
+- [x] **Step 2: Run tests — confirm they fail**
 
 ```bash
 ./venv/bin/pytest tests/test_daily_bread.py -v
@@ -913,7 +939,7 @@ def test_main_does_not_send_to_non_matching_hour(monkeypatch):
 
 Expected: `ImportError` — `_get_current_hour_eat` and `_get_recipients` don't exist yet.
 
-- [ ] **Step 3: Rewrite `daily_bread.py`**
+- [x] **Step 3: Rewrite `daily_bread.py`**
 
 Replace the entire file:
 
@@ -989,7 +1015,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: Remove `send_to_configured_chats` from `telegram_client.py`**
+- [x] **Step 4: Remove `send_to_configured_chats` from `telegram_client.py`**
 
 Delete the entire `send_to_configured_chats` function (lines 80–95 in the current file) and remove the `get_chat_ids` import at the top.
 
@@ -1018,7 +1044,7 @@ def send_to_configured_chats(messages: str | list[str]) -> bool:
     return sent_any
 ```
 
-- [ ] **Step 5: Run tests — confirm they pass**
+- [x] **Step 5: Run tests — confirm they pass**
 
 ```bash
 ./venv/bin/pytest tests/test_daily_bread.py -v
@@ -1026,7 +1052,7 @@ def send_to_configured_chats(messages: str | list[str]) -> bool:
 
 Expected: all 6 tests PASS.
 
-- [ ] **Step 6: Run full test suite — confirm nothing regressed**
+- [x] **Step 6: Run full test suite — confirm nothing regressed**
 
 ```bash
 ./venv/bin/pytest tests/ -v
@@ -1034,7 +1060,7 @@ Expected: all 6 tests PASS.
 
 Expected: all tests PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add daily_bread.py telegram_client.py tests/test_daily_bread.py
@@ -1059,7 +1085,7 @@ git commit -m "feat: dispatch daily readings from subscriber DB by EAT hour"
   - `get_chat_ids() -> list[str]` from `config.py`
   - `handle_message_text(text: str, chat_id: str = "") -> list[str] | None` from `commands.py`
 
-- [ ] **Step 1: Update `bot_app.py` lifespan**
+- [x] **Step 1: Update `bot_app.py` lifespan**
 
 In the `lifespan` function, add after the webhook registration block and before `log_event("startup_ready", ...)`:
 
@@ -1073,7 +1099,7 @@ In the `lifespan` function, add after the webhook registration block and before 
         log_event("subscribers_seeded_from_env", count=seeded)
 ```
 
-- [ ] **Step 2: Update the `handle_message_text` call in `bot_app.py`**
+- [x] **Step 2: Update the `handle_message_text` call in `bot_app.py`**
 
 Find this line (inside the `webhook` route handler):
 
@@ -1095,7 +1121,7 @@ Also find the fallback call two lines below it:
 
 This fallback doesn't need `chat_id` (it's just `/help`), leave it as-is.
 
-- [ ] **Step 3: Update `docker-compose.yml` — add named volume**
+- [x] **Step 3: Update `docker-compose.yml` — add named volume**
 
 Add a `volumes` key under the `bot` service and declare the named volume at the bottom:
 
@@ -1110,7 +1136,7 @@ volumes:
   bible-data:
 ```
 
-- [ ] **Step 4: Update `Dockerfile` — copy `db.py` and create `/data`**
+- [x] **Step 4: Update `Dockerfile` — copy `db.py` and create `/data`**
 
 In the `COPY` line, add `db.py`:
 
@@ -1130,7 +1156,7 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
 
 (This replaces the existing `&& chown -R appuser:appuser /app` line.)
 
-- [ ] **Step 5: Update `.gitignore`**
+- [x] **Step 5: Update `.gitignore`**
 
 Add `data/` on its own line (the DB file must not be committed):
 
@@ -1138,7 +1164,7 @@ Add `data/` on its own line (the DB file must not be committed):
 data/
 ```
 
-- [ ] **Step 6: Update `.env.example`**
+- [x] **Step 6: Update `.env.example`**
 
 Replace the `TELEGRAM_CHAT_IDS` block and add `DB_PATH` note:
 
@@ -1153,7 +1179,7 @@ TELEGRAM_CHAT_IDS=123456789,987654321
 # DB_PATH=/data/bible.db
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add bot_app.py docker-compose.yml Dockerfile .gitignore .env.example
@@ -1168,7 +1194,7 @@ This task has no code changes. It is a step-by-step checklist for deploying to t
 
 **Run all steps on the VPS as the `deploy` user.**
 
-- [ ] **Step 1: Pull and rebuild**
+- [x] **Step 1: Pull and rebuild**
 
 ```bash
 cd ~/opt/bible
@@ -1177,14 +1203,14 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-- [ ] **Step 2: Verify the container is healthy**
+- [x] **Step 2: Verify the container is healthy**
 
 ```bash
 docker ps | grep bible-bot
 # Should show: Up X seconds (healthy)
 ```
 
-- [ ] **Step 3: Verify DB was created and seeded**
+- [x] **Step 3: Verify DB was created and seeded**
 
 ```bash
 docker compose exec -T bot python -c "import sqlite3,os; rows=sqlite3.connect(os.getenv('DB_PATH','/data/bible.db')).execute('SELECT * FROM subscribers').fetchall(); print(rows)"
@@ -1198,7 +1224,7 @@ If the table is empty, check startup logs:
 docker logs bible-bot --tail 50 | grep -E "seed|subscriber|error"
 ```
 
-- [ ] **Step 4: Test `/subscribe` and `/unsubscribe` live**
+- [x] **Step 4: Test `/subscribe` and `/unsubscribe` live**
 
 Open Telegram, send `/subscribe 7` to the bot. Expected reply: `✅ You're subscribed! You'll get your daily reading at 7:00 EAT.`
 
@@ -1212,7 +1238,7 @@ Verify in DB:
 docker compose exec -T bot python -c "import sqlite3,os; rows=sqlite3.connect(os.getenv('DB_PATH','/data/bible.db')).execute('SELECT chat_id,hour_eat,source FROM subscribers').fetchall(); print(rows)"
 ```
 
-- [ ] **Step 5: Test dry-run dispatch manually**
+- [x] **Step 5: Test dry-run dispatch manually**
 
 Pick a subscriber's `chat_id` and hour. Temporarily set one subscriber's hour to the current EAT hour (or just run the script and check output):
 
@@ -1222,7 +1248,7 @@ docker compose exec -T bot python daily_bread.py
 
 Expected output: `✅ Sent to 1/N subscribers → Week X • DayName: Ref` (or "No subscribers" if no match for current hour).
 
-- [ ] **Step 6: Update cron entry**
+- [x] **Step 6: Update cron entry**
 
 ```bash
 crontab -e
@@ -1246,7 +1272,7 @@ Verify the new crontab:
 crontab -l | grep bible
 ```
 
-- [ ] **Step 7: Remove `TELEGRAM_CHAT_IDS` from `.env`**
+- [x] **Step 7: Remove `TELEGRAM_CHAT_IDS` from `.env`**
 
 Once the DB is confirmed seeded, remove the line from `.env` on the VPS (the env var is no longer read during dispatch):
 
