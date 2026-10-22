@@ -34,7 +34,8 @@ Grafana Alloy (VPS) ──► Grafana Cloud Loki
 | `/settime` | `/settime 9` | Change delivery hour (EAT) |
 
 Interactive use is **open** to anyone who starts the bot.  
-`TELEGRAM_CHAT_IDS` seeds the subscriber DB on **first startup only** (when the table is empty).
+Subscribers manage themselves with `/subscribe` and `/unsubscribe` — the database is the only
+source of truth, and nobody is added without asking.
 
 ---
 

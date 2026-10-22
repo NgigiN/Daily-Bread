@@ -106,38 +106,6 @@ def test_get_subscriber_not_found():
     assert get_subscriber("999") is None
 
 
-def test_seed_from_env_populates_empty_db():
-    from db import seed_from_env, get_subscribers_for_hour
-    count = seed_from_env(["111", "222"], default_hour=5)
-    assert count == 2
-    assert set(get_subscribers_for_hour(5)) == {"111", "222"}
-
-
-def test_seed_from_env_sets_source_env_seed():
-    from db import seed_from_env, get_subscriber
-    seed_from_env(["111"])
-    assert get_subscriber("111")["source"] == "env_seed"
-
-
-def test_seed_from_env_skips_when_db_not_empty():
-    from db import add_subscriber, seed_from_env, get_subscriber
-    add_subscriber("existing")
-    count = seed_from_env(["111", "222"])
-    assert count == 0
-    assert get_subscriber("111") is None
-
-
-def test_seed_from_env_empty_list():
-    from db import seed_from_env
-    assert seed_from_env([]) == 0
-
-
-def test_seed_from_env_skips_blank_strings():
-    from db import seed_from_env, get_subscribers_for_hour
-    count = seed_from_env(["111", "  ", "222"])
-    assert count == 2
-
-
 # --- activity tracking & streaks ---
 
 def test_record_activity_twice_same_day_is_idempotent():

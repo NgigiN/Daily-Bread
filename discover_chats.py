@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """List chat IDs from users who have messaged your bot.
 
-Uses getUpdates. This only works when no webhook is set. If the interactive
-bot webhook is active, remove it first or add chat IDs to TELEGRAM_CHAT_IDS
-manually for the daily push.
+A diagnostic: useful for matching a chat ID in the logs or the database to a
+person. It does not subscribe anyone — each person sends /subscribe for
+themselves.
+
+Uses getUpdates, which only works when no webhook is set. If the interactive
+bot webhook is active, remove it first.
 """
 
 import os
@@ -58,13 +61,13 @@ def main():
         print("  3. Run this script again")
         sys.exit(0)
 
-    print("Chat IDs for your .env (TELEGRAM_CHAT_IDS=...):")
+    print("Chats that have messaged this bot:")
     print()
     for cid, (username, name) in sorted(seen.items()):
         label = f"@{username}" if username else name or "unknown"
         print(f"  {cid}  ({label})")
     print()
-    print("Copy the IDs (comma-separated) into TELEGRAM_CHAT_IDS in .env")
+    print("To receive daily readings, each person sends /subscribe to the bot.")
 
 
 if __name__ == "__main__":

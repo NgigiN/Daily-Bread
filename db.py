@@ -48,36 +48,6 @@ def init_db() -> None:
         conn.close()
 
 
-def seed_from_env(chat_ids: list[str], *, default_hour: int = 6) -> int:
-    """Insert chat_ids into an empty table (source='env_seed'). No-ops if table has rows.
-
-    WARNING: This only seeds when the table is completely empty. If all subscribers
-    later unsubscribe, the next restart will re-seed from TELEGRAM_CHAT_IDS.
-    To prevent this, remove TELEGRAM_CHAT_IDS from .env after the first deploy
-    (see deploy checklist Task 5 Step 7).
-    """
-    if not chat_ids:
-        return 0
-    conn = _connect()
-    try:
-        count = conn.execute("SELECT COUNT(*) FROM subscribers").fetchone()[0]
-        if count > 0:
-            return 0
-        now = datetime.now(timezone.utc).isoformat()
-        inserted = 0
-        for chat_id in [c.strip() for c in chat_ids if c.strip()]:
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO subscribers (chat_id, hour_eat, joined_at, source)"
-                " VALUES (?, ?, ?, ?)",
-                (chat_id, default_hour, now, "env_seed"),
-            )
-            inserted += cur.rowcount
-        conn.commit()
-        return inserted
-    finally:
-        conn.close()
-
-
 def add_subscriber(chat_id: str, *, hour_eat: int = 6) -> bool:
     """Insert subscriber. Returns True if newly inserted, False if already existed."""
     now = datetime.now(timezone.utc).isoformat()
