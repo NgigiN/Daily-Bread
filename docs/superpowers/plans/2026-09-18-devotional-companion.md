@@ -10,6 +10,48 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-18-devotional-companion-design.md`
 
+## Execution record
+
+**Shipped** 2026-09-18 in #2, with the image fix in `9e4eeec`. Marked complete
+2026-10-22.
+
+Boxes below are ticked against evidence, not against "the code looks right":
+
+- **Tasks 1-8 (code).** Every artifact the plan specifies is present and
+  committed: `prompts.py`, `nudge_check.py`, the `activity` and `nudges` tables
+  in `init_db()`, `record_activity`, `get_streak`, `record_nudge`,
+  `get_subscribers_for_nudge`, `NUDGE_DELAY_HOURS`, `build_reflection_message`,
+  `handle_streak` with its registration, and `message_reaction` in
+  `ALLOWED_WEBHOOK_UPDATES`. The suite passes.
+- **Task 9 (deploy and live checks).** Confirmed on the host 2026-10-22: the
+  crontab holds a single `0 * * * *` entry, the script it calls runs both
+  `daily_bread.py` and `nudge_check.py`, all three tables exist, `/streak`
+  answers correctly, `getWebhookInfo` lists `message_reaction` in
+  `allowed_updates`, and `webhook_reaction` events appear in the container log
+  for a real reaction.
+- **One item verified indirectly.** Step 5's reflection block in `/today` was
+  not re-sent by hand. `_reading_for_date` inserts it on the same code path the
+  daily push uses, and that insertion is covered by test.
+
+A note for anyone verifying this later: inspecting the `activity` table cannot
+confirm a same-day reaction. One row per chat per day means any later
+interaction is a silent no-op, so a working reaction and a broken one look
+identical. The `webhook_reaction` log line is the only usable evidence.
+
+### Deviations
+
+- `has_activity` was written and tested per Task 1, then removed 2026-10-22.
+  Nothing ever called it: `get_subscribers_for_nudge` filters today's
+  interactions with a `NOT IN` subquery instead.
+
+### What production then showed
+
+The nudge works, and is arguably too effective. Between 2026-09-18 and
+2026-10-21 it sent 41 nudges, 32 of them to the single remaining subscriber and
+the last 12 on consecutive days, against 5 days of recorded activity in total.
+This plan caps nudges at one per day but never caps the run, so a silent
+subscriber is reminded indefinitely. Capping that is tracked separately.
+
 ## Global Constraints
 
 - Python 3.12; all new code must be compatible (production Docker image is `python:3.12-slim-bookworm`)
@@ -64,7 +106,7 @@
   - `has_activity(chat_id: str, activity_date: str) -> bool`
   - `get_streak(chat_id: str, today: date) -> tuple[int, int, int]` — `(current_streak, longest_streak, total_days_active)`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Append to the end of `tests/test_db.py`:
 
@@ -158,7 +200,7 @@ def test_get_streak_only_counts_this_chat_id():
     assert get_streak("111", date(2026, 9, 18)) == (1, 1, 1)
 ```
 
-- [ ] **Step 2: Run tests — confirm they fail**
+- [x] **Step 2: Run tests — confirm they fail**
 
 ```bash
 ./venv/bin/pytest tests/test_db.py -v -k "activity or streak"
@@ -166,7 +208,7 @@ def test_get_streak_only_counts_this_chat_id():
 
 Expected: `ImportError` / `AttributeError` — `record_activity`, `has_activity`, `get_streak` don't exist yet.
 
-- [ ] **Step 3: Update the import line in `db.py`**
+- [x] **Step 3: Update the import line in `db.py`**
 
 Find:
 ```python
@@ -178,7 +220,7 @@ Replace with:
 from datetime import date, datetime, timedelta, timezone
 ```
 
-- [ ] **Step 4: Add the `activity` table to `init_db()`**
+- [x] **Step 4: Add the `activity` table to `init_db()`**
 
 Find (inside `init_db()`):
 ```python
@@ -214,7 +256,7 @@ Replace with:
         conn.commit()
 ```
 
-- [ ] **Step 5: Append `record_activity`, `has_activity`, `get_streak` to the end of `db.py`**
+- [x] **Step 5: Append `record_activity`, `has_activity`, `get_streak` to the end of `db.py`**
 
 ```python
 def record_activity(chat_id: str, activity_date: str) -> None:
@@ -287,7 +329,7 @@ def get_streak(chat_id: str, today: date) -> tuple[int, int, int]:
     return current, longest, total
 ```
 
-- [ ] **Step 6: Run tests — confirm they pass**
+- [x] **Step 6: Run tests — confirm they pass**
 
 ```bash
 ./venv/bin/pytest tests/test_db.py -v
@@ -295,7 +337,7 @@ def get_streak(chat_id: str, today: date) -> tuple[int, int, int]:
 
 Expected: all tests PASS (existing subscriber tests plus the 11 new ones).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add db.py tests/test_db.py
@@ -316,7 +358,7 @@ git commit -m "feat: add activity tracking and streak computation"
   - `record_nudge(chat_id: str, nudge_date: str) -> None`
   - `get_subscribers_for_nudge(*, current_hour: int, delay_hours: int, activity_date: str, nudge_date: str) -> list[dict[str, Any]]` — each dict has `chat_id` and `hour_eat`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Append to the end of `tests/test_db.py`:
 
@@ -385,7 +427,7 @@ def test_record_nudge_is_idempotent():
     record_nudge("111", "2026-09-18")  # must not raise
 ```
 
-- [ ] **Step 2: Run tests — confirm they fail**
+- [x] **Step 2: Run tests — confirm they fail**
 
 ```bash
 ./venv/bin/pytest tests/test_db.py -v -k "nudge"
@@ -393,7 +435,7 @@ def test_record_nudge_is_idempotent():
 
 Expected: `ImportError` / `AttributeError` — `record_nudge`, `get_subscribers_for_nudge` don't exist yet.
 
-- [ ] **Step 3: Add the `nudges` table to `init_db()`**
+- [x] **Step 3: Add the `nudges` table to `init_db()`**
 
 Find (the `activity` table statement added in Task 1):
 ```python
@@ -429,7 +471,7 @@ Replace with:
         conn.commit()
 ```
 
-- [ ] **Step 4: Append `record_nudge` and `get_subscribers_for_nudge` to the end of `db.py`**
+- [x] **Step 4: Append `record_nudge` and `get_subscribers_for_nudge` to the end of `db.py`**
 
 ```python
 def record_nudge(chat_id: str, nudge_date: str) -> None:
@@ -471,7 +513,7 @@ def get_subscribers_for_nudge(
         conn.close()
 ```
 
-- [ ] **Step 5: Run tests — confirm they pass**
+- [x] **Step 5: Run tests — confirm they pass**
 
 ```bash
 ./venv/bin/pytest tests/test_db.py -v
@@ -479,7 +521,7 @@ def get_subscribers_for_nudge(
 
 Expected: all tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add db.py tests/test_db.py
@@ -502,7 +544,7 @@ git commit -m "feat: add nudge eligibility persistence"
   - `prompt_for_date(day: date) -> str` in `prompts.py`
   - `build_reflection_message(prompt: str) -> str` in `formatting.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_prompts.py`:
 
@@ -571,7 +613,7 @@ def test_build_reflection_message_has_reflect_label():
     assert "Reflect" in msg
 ```
 
-- [ ] **Step 2: Run tests — confirm they fail**
+- [x] **Step 2: Run tests — confirm they fail**
 
 ```bash
 ./venv/bin/pytest tests/test_prompts.py tests/test_formatting.py -v
@@ -579,7 +621,7 @@ def test_build_reflection_message_has_reflect_label():
 
 Expected: `ModuleNotFoundError: No module named 'prompts'` and `ImportError: cannot import name 'build_reflection_message'`.
 
-- [ ] **Step 3: Create `prompts.py`**
+- [x] **Step 3: Create `prompts.py`**
 
 ```python
 """Static reflection prompt bank. Deterministic rotation by day-of-year."""
@@ -638,14 +680,14 @@ def prompt_for_date(day: date) -> str:
     return REFLECTION_PROMPTS[index]
 ```
 
-- [ ] **Step 4: Add `build_reflection_message` to the end of `formatting.py`**
+- [x] **Step 4: Add `build_reflection_message` to the end of `formatting.py`**
 
 ```python
 def build_reflection_message(prompt: str) -> str:
     return f"🤔 <b>Reflect</b>\n{html.escape(prompt)}"
 ```
 
-- [ ] **Step 5: Run tests — confirm they pass**
+- [x] **Step 5: Run tests — confirm they pass**
 
 ```bash
 ./venv/bin/pytest tests/test_prompts.py tests/test_formatting.py -v
@@ -653,7 +695,7 @@ def build_reflection_message(prompt: str) -> str:
 
 Expected: all tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add prompts.py formatting.py tests/test_prompts.py tests/test_formatting.py
@@ -674,7 +716,7 @@ git commit -m "feat: add reflection prompt bank and message formatting"
   - `build_reflection_message(prompt: str) -> str` from `formatting.py` (Task 3)
 - Produces: the daily push's `messages` list now has the reflection message inserted immediately before the footer (`messages[-1]` stays the footer)
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 Append to the end of `tests/test_daily_bread.py`:
 
@@ -713,7 +755,7 @@ def test_main_includes_reflection_message_before_footer(monkeypatch):
     assert "Test prompt?" in sent_messages[-2]
 ```
 
-- [ ] **Step 2: Run test — confirm it fails**
+- [x] **Step 2: Run test — confirm it fails**
 
 ```bash
 ./venv/bin/pytest tests/test_daily_bread.py -v -k reflection
@@ -721,7 +763,7 @@ def test_main_includes_reflection_message_before_footer(monkeypatch):
 
 Expected: FAIL — `sent_messages` is `["reading message", "footer"]`, no reflection text present (or `AttributeError` since `daily_bread.prompt_for_date` doesn't exist yet).
 
-- [ ] **Step 3: Update `daily_bread.py`**
+- [x] **Step 3: Update `daily_bread.py`**
 
 Find the import block:
 ```python
@@ -761,7 +803,7 @@ Replace with:
     sent = 0
 ```
 
-- [ ] **Step 4: Run test — confirm it passes**
+- [x] **Step 4: Run test — confirm it passes**
 
 ```bash
 ./venv/bin/pytest tests/test_daily_bread.py -v
@@ -769,7 +811,7 @@ Replace with:
 
 Expected: all tests PASS.
 
-- [ ] **Step 5: Run full test suite**
+- [x] **Step 5: Run full test suite**
 
 ```bash
 ./venv/bin/pytest tests/ -v
@@ -777,7 +819,7 @@ Expected: all tests PASS.
 
 Expected: all tests PASS, no regressions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add daily_bread.py tests/test_daily_bread.py
@@ -798,7 +840,7 @@ git commit -m "feat: include reflection prompt in daily push"
   - `build_reflection_message(prompt: str) -> str` from `formatting.py` (Task 3)
 - Produces: `_reading_for_date()` output now has the reflection message inserted immediately before the footer — same contract as Task 4, so `/today` and `/day` match the daily push
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 Append to the end of `tests/test_commands.py`:
 
@@ -820,7 +862,7 @@ def test_handle_today_includes_reflection_prompt(monkeypatch):
     assert msgs[-1] == FOOTER
 ```
 
-- [ ] **Step 2: Run test — confirm it fails**
+- [x] **Step 2: Run test — confirm it fails**
 
 ```bash
 ./venv/bin/pytest tests/test_commands.py -v -k reflection
@@ -828,7 +870,7 @@ def test_handle_today_includes_reflection_prompt(monkeypatch):
 
 Expected: FAIL — `AttributeError: <module 'commands'> does not have the attribute 'prompt_for_date'`.
 
-- [ ] **Step 3: Update `commands.py`**
+- [x] **Step 3: Update `commands.py`**
 
 Find the import block:
 ```python
@@ -920,7 +962,7 @@ def _reading_for_date(day: date, *, date_label: str | None = None) -> list[str]:
     return messages
 ```
 
-- [ ] **Step 4: Run test — confirm it passes**
+- [x] **Step 4: Run test — confirm it passes**
 
 ```bash
 ./venv/bin/pytest tests/test_commands.py -v
@@ -928,7 +970,7 @@ def _reading_for_date(day: date, *, date_label: str | None = None) -> list[str]:
 
 Expected: all tests PASS.
 
-- [ ] **Step 5: Run full test suite**
+- [x] **Step 5: Run full test suite**
 
 ```bash
 ./venv/bin/pytest tests/ -v
@@ -936,7 +978,7 @@ Expected: all tests PASS.
 
 Expected: all tests PASS, no regressions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add commands.py tests/test_commands.py
@@ -958,7 +1000,7 @@ git commit -m "feat: include reflection prompt in /today and /day"
   - `get_eat_today() -> date` from `plan_reader` (already imported)
 - Produces: `handle_streak(args: str, chat_id: str = "") -> list[str]`, registered as `/streak`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Append to the end of `tests/test_commands.py`:
 
@@ -1008,7 +1050,7 @@ def test_handle_message_text_routes_streak():
     assert "streak" in msgs[0].lower()
 ```
 
-- [ ] **Step 2: Run tests — confirm they fail**
+- [x] **Step 2: Run tests — confirm they fail**
 
 ```bash
 ./venv/bin/pytest tests/test_commands.py -v -k streak
@@ -1016,7 +1058,7 @@ def test_handle_message_text_routes_streak():
 
 Expected: `ImportError: cannot import name 'handle_streak'`.
 
-- [ ] **Step 3: Update the `db` import line in `commands.py`**
+- [x] **Step 3: Update the `db` import line in `commands.py`**
 
 Find:
 ```python
@@ -1028,7 +1070,7 @@ Replace with:
 from db import add_subscriber, get_streak, get_subscriber, remove_subscriber, set_delivery_hour
 ```
 
-- [ ] **Step 4: Add `handle_streak` after `handle_settime`**
+- [x] **Step 4: Add `handle_streak` after `handle_settime`**
 
 ```python
 def handle_streak(_args: str, chat_id: str = "") -> list[str]:
@@ -1044,7 +1086,7 @@ def handle_streak(_args: str, chat_id: str = "") -> list[str]:
     ]
 ```
 
-- [ ] **Step 5: Register the command**
+- [x] **Step 5: Register the command**
 
 Find `BOT_COMMANDS`:
 ```python
@@ -1121,7 +1163,7 @@ Replace with:
 /streak - see your current and longest streak
 ```
 
-- [ ] **Step 6: Run tests — confirm they pass**
+- [x] **Step 6: Run tests — confirm they pass**
 
 ```bash
 ./venv/bin/pytest tests/test_commands.py -v
@@ -1129,7 +1171,7 @@ Replace with:
 
 Expected: all tests PASS.
 
-- [ ] **Step 7: Run full test suite**
+- [x] **Step 7: Run full test suite**
 
 ```bash
 ./venv/bin/pytest tests/ -v
@@ -1137,7 +1179,7 @@ Expected: all tests PASS.
 
 Expected: all tests PASS, no regressions.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add commands.py tests/test_commands.py
@@ -1159,7 +1201,7 @@ git commit -m "feat: add /streak command"
   - `get_eat_today() -> date` from `plan_reader`
 - Produces: `_extract_reaction_chat_id(update: dict[str, Any]) -> int | None` in `bot_app.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_bot_app.py`:
 
@@ -1193,7 +1235,7 @@ def test_extract_reaction_chat_id_missing_chat():
     assert _extract_reaction_chat_id({"message_reaction": {}}) is None
 ```
 
-- [ ] **Step 2: Run test — confirm it fails**
+- [x] **Step 2: Run test — confirm it fails**
 
 ```bash
 ./venv/bin/pytest tests/test_bot_app.py -v
@@ -1201,7 +1243,7 @@ def test_extract_reaction_chat_id_missing_chat():
 
 Expected: `ImportError: cannot import name '_extract_reaction_chat_id'`.
 
-- [ ] **Step 3: Update `ALLOWED_WEBHOOK_UPDATES` in `telegram_client.py`**
+- [x] **Step 3: Update `ALLOWED_WEBHOOK_UPDATES` in `telegram_client.py`**
 
 Find:
 ```python
@@ -1213,7 +1255,7 @@ Replace with:
 ALLOWED_WEBHOOK_UPDATES = ["message", "edited_message", "message_reaction"]
 ```
 
-- [ ] **Step 4: Update imports in `bot_app.py`**
+- [x] **Step 4: Update imports in `bot_app.py`**
 
 Find:
 ```python
@@ -1255,7 +1297,7 @@ from telegram_client import (
 )
 ```
 
-- [ ] **Step 5: Add `_extract_reaction_chat_id` after `_extract_message`**
+- [x] **Step 5: Add `_extract_reaction_chat_id` after `_extract_message`**
 
 Find:
 ```python
@@ -1277,7 +1319,7 @@ def _extract_reaction_chat_id(update: dict[str, Any]) -> int | None:
     return chat.get("id")
 ```
 
-- [ ] **Step 6: Record activity in the webhook handler**
+- [x] **Step 6: Record activity in the webhook handler**
 
 Find:
 ```python
@@ -1332,7 +1374,7 @@ Replace with:
         return JSONResponse({"ok": True})
 ```
 
-- [ ] **Step 7: Run tests — confirm they pass**
+- [x] **Step 7: Run tests — confirm they pass**
 
 ```bash
 ./venv/bin/pytest tests/test_bot_app.py -v
@@ -1340,7 +1382,7 @@ Replace with:
 
 Expected: all tests PASS.
 
-- [ ] **Step 8: Run full test suite**
+- [x] **Step 8: Run full test suite**
 
 ```bash
 ./venv/bin/pytest tests/ -v
@@ -1348,7 +1390,7 @@ Expected: all tests PASS.
 
 Expected: all tests PASS, no regressions.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add telegram_client.py bot_app.py tests/test_bot_app.py
@@ -1373,7 +1415,7 @@ git commit -m "feat: record subscriber activity from messages and reactions"
   - `NUDGE_DELAY_HOURS` from `config.py`
 - Produces: `main() -> None` in `nudge_check.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_nudge_check.py`:
 
@@ -1489,7 +1531,7 @@ def test_main_does_not_record_nudge_on_failed_send(monkeypatch):
     assert sent_to == ["111"]
 ```
 
-- [ ] **Step 2: Run tests — confirm they fail**
+- [x] **Step 2: Run tests — confirm they fail**
 
 ```bash
 ./venv/bin/pytest tests/test_nudge_check.py -v
@@ -1497,7 +1539,7 @@ def test_main_does_not_record_nudge_on_failed_send(monkeypatch):
 
 Expected: `ModuleNotFoundError: No module named 'nudge_check'`.
 
-- [ ] **Step 3: Add `NUDGE_DELAY_HOURS` to `config.py`**
+- [x] **Step 3: Add `NUDGE_DELAY_HOURS` to `config.py`**
 
 Find:
 ```python
@@ -1516,7 +1558,7 @@ NUDGE_DELAY_HOURS = 8
 TIMEZONE = "Africa/Nairobi"
 ```
 
-- [ ] **Step 4: Create `nudge_check.py`**
+- [x] **Step 4: Create `nudge_check.py`**
 
 ```python
 #!/usr/bin/env python3
@@ -1570,7 +1612,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 5: Run tests — confirm they pass**
+- [x] **Step 5: Run tests — confirm they pass**
 
 ```bash
 ./venv/bin/pytest tests/test_nudge_check.py -v
@@ -1578,7 +1620,7 @@ if __name__ == "__main__":
 
 Expected: all tests PASS.
 
-- [ ] **Step 6: Run full test suite**
+- [x] **Step 6: Run full test suite**
 
 ```bash
 ./venv/bin/pytest tests/ -v
@@ -1586,7 +1628,7 @@ Expected: all tests PASS.
 
 Expected: all tests PASS, no regressions.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add config.py nudge_check.py tests/test_nudge_check.py
@@ -1602,7 +1644,7 @@ This task has no automated tests — it wires the new script into the existing c
 **Files:**
 - Modify: `run_daily_docker.sh`
 
-- [ ] **Step 1: Add the nudge check to `run_daily_docker.sh`**
+- [x] **Step 1: Add the nudge check to `run_daily_docker.sh`**
 
 Find:
 ```bash
@@ -1615,14 +1657,14 @@ docker compose exec -T bot python daily_bread.py
 docker compose exec -T bot python nudge_check.py
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add run_daily_docker.sh
 git commit -m "feat: run nudge check alongside daily push"
 ```
 
-- [ ] **Step 3: Deploy and restart (on the VPS)**
+- [x] **Step 3: Deploy and restart (on the VPS)**
 
 ```bash
 cd ~/opt/bible
@@ -1634,7 +1676,7 @@ docker logs bible-bot --tail 30
 
 Confirm the startup log shows `webhook_register_result` with `ok: true` — this is the restart that re-registers the webhook with `message_reaction` in `allowed_updates`.
 
-- [ ] **Step 4: Verify the new tables exist**
+- [x] **Step 4: Verify the new tables exist**
 
 ```bash
 docker compose exec -T bot python -c "import sqlite3,os; conn=sqlite3.connect(os.getenv('DB_PATH','/data/bible.db')); print(conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\").fetchall())"
@@ -1642,13 +1684,13 @@ docker compose exec -T bot python -c "import sqlite3,os; conn=sqlite3.connect(os
 
 Expected: `[('subscribers',), ('activity',), ('nudges',)]` (order may vary).
 
-- [ ] **Step 5: Verify reflection prompts and `/streak` live**
+- [x] **Step 5: Verify reflection prompts and `/streak` live**
 
 From a subscribed Telegram account, send `/today`. Expected: the reading, then a `🤔 Reflect` message, then the footer.
 
 Send `/streak`. Expected: current/longest/total streak reply.
 
-- [ ] **Step 6: Verify reaction tracking**
+- [x] **Step 6: Verify reaction tracking**
 
 React to any message the bot sent (long-press → pick an emoji, in a private chat). Then check:
 
@@ -1658,7 +1700,7 @@ docker compose exec -T bot python -c "import sqlite3,os; conn=sqlite3.connect(os
 
 Expected: a row for your `chat_id` with today's date.
 
-- [ ] **Step 7: Confirm no cron schedule change is needed**
+- [x] **Step 7: Confirm no cron schedule change is needed**
 
 ```bash
 crontab -l | grep bible
