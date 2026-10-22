@@ -28,6 +28,12 @@ RATE_LIMIT_WINDOW_SEC = 30.0
 MAX_FETCH_RETRIES = 4
 
 SEND_DELAY_SEC = 0.35
+
+# A send is retried only for 429 and 5xx; every other 4xx is final.
+SEND_MAX_ATTEMPTS = 3
+SEND_RETRY_BASE_SEC = 1.0
+# Cap on a retry_after Telegram asks for, so one 429 cannot stall the hourly job.
+SEND_RETRY_MAX_SLEEP_SEC = 30.0
 CACHE_TTL_SEC = 3600
 NUDGE_DELAY_HOURS = 8
 
