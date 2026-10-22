@@ -140,28 +140,13 @@ def test_seed_from_env_skips_blank_strings():
 
 # --- activity tracking & streaks ---
 
-def test_record_activity_then_has_activity_true():
-    from db import record_activity, has_activity
-    record_activity("111", "2026-09-18")
-    assert has_activity("111", "2026-09-18") is True
-
-
-def test_has_activity_false_for_different_date():
-    from db import record_activity, has_activity
-    record_activity("111", "2026-09-18")
-    assert has_activity("111", "2026-09-19") is False
-
-
-def test_has_activity_false_when_no_rows():
-    from db import has_activity
-    assert has_activity("999", "2026-09-18") is False
-
-
 def test_record_activity_twice_same_day_is_idempotent():
-    from db import record_activity, has_activity
+    from db import record_activity, get_streak
+    from datetime import date
     record_activity("111", "2026-09-18")
     record_activity("111", "2026-09-18")  # must not raise
-    assert has_activity("111", "2026-09-18") is True
+    # total_days_active stays 1 — the composite PK collapsed the second insert
+    assert get_streak("111", date(2026, 9, 18)) == (1, 1, 1)
 
 
 def test_get_streak_no_activity_returns_zeros():

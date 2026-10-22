@@ -169,19 +169,6 @@ def record_activity(chat_id: str, activity_date: str) -> None:
         conn.close()
 
 
-def has_activity(chat_id: str, activity_date: str) -> bool:
-    """True if chat_id has an activity row for activity_date."""
-    conn = _connect()
-    try:
-        row = conn.execute(
-            "SELECT 1 FROM activity WHERE chat_id = ? AND activity_date = ?",
-            (chat_id, activity_date),
-        ).fetchone()
-        return row is not None
-    finally:
-        conn.close()
-
-
 def get_streak(chat_id: str, today: date) -> tuple[int, int, int]:
     """
     Return (current_streak, longest_streak, total_days_active) for chat_id.
