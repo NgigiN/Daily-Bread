@@ -45,9 +45,22 @@ source of truth, and nobody is added without asking.
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   
-python bot_app.py     
+cp .env.example .env
+python bot_app.py
 ```
+
+---
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+No network, no Telegram token and no real database: `db.py` runs against a
+temporary file via `DB_PATH`, and the send path is exercised with a fake
+`requests.post`.
 
 ---
 
