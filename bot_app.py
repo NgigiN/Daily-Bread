@@ -64,14 +64,10 @@ async def lifespan(_app: FastAPI):
         except Exception as e:
             log_event("webhook_register_failed", error=str(e), url=webhook_url)
 
-    from db import init_db, seed_from_env, count_subscribers
-    from config import get_chat_ids
+    from db import init_db, count_subscribers
 
     try:
         init_db()
-        seeded = seed_from_env(get_chat_ids())
-        if seeded:
-            log_event("subscribers_seeded_from_env", count=seeded)
         total = count_subscribers()
         log_event("subscriber_count", count=total)
     except Exception as e:

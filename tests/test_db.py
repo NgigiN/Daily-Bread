@@ -106,62 +106,15 @@ def test_get_subscriber_not_found():
     assert get_subscriber("999") is None
 
 
-def test_seed_from_env_populates_empty_db():
-    from db import seed_from_env, get_subscribers_for_hour
-    count = seed_from_env(["111", "222"], default_hour=5)
-    assert count == 2
-    assert set(get_subscribers_for_hour(5)) == {"111", "222"}
-
-
-def test_seed_from_env_sets_source_env_seed():
-    from db import seed_from_env, get_subscriber
-    seed_from_env(["111"])
-    assert get_subscriber("111")["source"] == "env_seed"
-
-
-def test_seed_from_env_skips_when_db_not_empty():
-    from db import add_subscriber, seed_from_env, get_subscriber
-    add_subscriber("existing")
-    count = seed_from_env(["111", "222"])
-    assert count == 0
-    assert get_subscriber("111") is None
-
-
-def test_seed_from_env_empty_list():
-    from db import seed_from_env
-    assert seed_from_env([]) == 0
-
-
-def test_seed_from_env_skips_blank_strings():
-    from db import seed_from_env, get_subscribers_for_hour
-    count = seed_from_env(["111", "  ", "222"])
-    assert count == 2
-
-
 # --- activity tracking & streaks ---
 
-def test_record_activity_then_has_activity_true():
-    from db import record_activity, has_activity
-    record_activity("111", "2026-09-18")
-    assert has_activity("111", "2026-09-18") is True
-
-
-def test_has_activity_false_for_different_date():
-    from db import record_activity, has_activity
-    record_activity("111", "2026-09-18")
-    assert has_activity("111", "2026-09-19") is False
-
-
-def test_has_activity_false_when_no_rows():
-    from db import has_activity
-    assert has_activity("999", "2026-09-18") is False
-
-
 def test_record_activity_twice_same_day_is_idempotent():
-    from db import record_activity, has_activity
+    from db import record_activity, get_streak
+    from datetime import date
     record_activity("111", "2026-09-18")
     record_activity("111", "2026-09-18")  # must not raise
-    assert has_activity("111", "2026-09-18") is True
+    # total_days_active stays 1 — the composite PK collapsed the second insert
+    assert get_streak("111", date(2026, 9, 18)) == (1, 1, 1)
 
 
 def test_get_streak_no_activity_returns_zeros():

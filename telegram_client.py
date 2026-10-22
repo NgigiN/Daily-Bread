@@ -9,6 +9,9 @@ import requests
 
 from config import (
     SEND_DELAY_SEC,
+    SEND_MAX_ATTEMPTS,
+    SEND_RETRY_BASE_SEC,
+    SEND_RETRY_MAX_SLEEP_SEC,
     TELEGRAM_API,
     get_bot_token,
     is_placeholder_token,
@@ -21,6 +24,88 @@ ALLOWED_WEBHOOK_UPDATES = ["message", "edited_message", "message_reaction"]
 
 def _url(token: str, method: str) -> str:
     return TELEGRAM_API.format(token=token, method=method)
+
+
+def _is_retryable(status: int) -> bool:
+    """Telegram is busy or rate-limiting. Any other 4xx will fail again."""
+    return status == 429 or status >= 500
+
+
+def _retry_delay(attempt: int, retry_after: Any = None) -> float:
+    """Seconds to wait before the next attempt. A retry_after wins, capped."""
+    if retry_after is not None:
+        try:
+            return min(float(retry_after), SEND_RETRY_MAX_SLEEP_SEC)
+        except (TypeError, ValueError):
+            pass
+    return SEND_RETRY_BASE_SEC * (2 ** (attempt - 1))
+
+
+def _send_chunk(endpoint: str, chat_id: str | int, chunk: str) -> bool:
+    """POST one chunk, retrying transient failures. True once Telegram takes it.
+
+    Retrying per chunk rather than per message is what keeps a late failure
+    from re-sending text the reader has already received.
+    """
+    for attempt in range(1, SEND_MAX_ATTEMPTS + 1):
+        final_attempt = attempt == SEND_MAX_ATTEMPTS
+        try:
+            r = requests.post(
+                endpoint,
+                json={
+                    "chat_id": chat_id,
+                    "text": chunk,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+                timeout=15,
+            )
+        except requests.RequestException as e:
+            if final_attempt:
+                log_event(
+                    "send_failed", chat_id=chat_id, error=str(e), attempts=attempt
+                )
+                return False
+            delay = _retry_delay(attempt)
+            log_event(
+                "send_retry",
+                chat_id=chat_id,
+                attempt=attempt,
+                error=str(e),
+                sleep=delay,
+            )
+            time.sleep(delay)
+            continue
+
+        try:
+            body = r.json() if r.content else {}
+        except ValueError:
+            body = {}
+
+        if r.status_code < 400 and body.get("ok"):
+            return True
+
+        if final_attempt or not _is_retryable(r.status_code):
+            log_event(
+                "send_failed",
+                chat_id=chat_id,
+                http_status=r.status_code,
+                telegram=body,
+                attempts=attempt,
+            )
+            return False
+
+        delay = _retry_delay(attempt, (body.get("parameters") or {}).get("retry_after"))
+        log_event(
+            "send_retry",
+            chat_id=chat_id,
+            attempt=attempt,
+            http_status=r.status_code,
+            sleep=delay,
+        )
+        time.sleep(delay)
+
+    return False
 
 
 def send_messages(
@@ -43,24 +128,7 @@ def send_messages(
     try:
         for message in messages:
             for chunk in split_message(message):
-                r = requests.post(
-                    endpoint,
-                    json={
-                        "chat_id": chat_id,
-                        "text": chunk,
-                        "parse_mode": "HTML",
-                        "disable_web_page_preview": True,
-                    },
-                    timeout=15,
-                )
-                body = r.json() if r.content else {}
-                if r.status_code >= 400 or not body.get("ok"):
-                    log_event(
-                        "send_failed",
-                        chat_id=chat_id,
-                        http_status=r.status_code,
-                        telegram=body,
-                    )
+                if not _send_chunk(endpoint, chat_id, chunk):
                     return False
                 chunks_sent += 1
                 time.sleep(SEND_DELAY_SEC)

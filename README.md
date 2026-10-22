@@ -34,7 +34,8 @@ Grafana Alloy (VPS) ──► Grafana Cloud Loki
 | `/settime` | `/settime 9` | Change delivery hour (EAT) |
 
 Interactive use is **open** to anyone who starts the bot.  
-`TELEGRAM_CHAT_IDS` seeds the subscriber DB on **first startup only** (when the table is empty).
+Subscribers manage themselves with `/subscribe` and `/unsubscribe` — the database is the only
+source of truth, and nobody is added without asking.
 
 ---
 
@@ -44,9 +45,22 @@ Interactive use is **open** to anyone who starts the bot.
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   
-python bot_app.py     
+cp .env.example .env
+python bot_app.py
 ```
+
+---
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+No network, no Telegram token and no real database: `db.py` runs against a
+temporary file via `DB_PATH`, and the send path is exercised with a fake
+`requests.post`.
 
 ---
 
