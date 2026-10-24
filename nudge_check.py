@@ -9,7 +9,9 @@ gentle reminder.
 
 from __future__ import annotations
 
-from config import NUDGE_DELAY_HOURS
+from datetime import timedelta
+
+from config import NUDGE_DELAY_HOURS, NUDGE_IDLE_DAYS
 from db import get_subscribers_for_nudge, record_nudge
 from logutil import log_event
 from plan_reader import get_eat_now, get_eat_today
@@ -23,16 +25,19 @@ NUDGE_MESSAGE = (
 
 def main() -> None:
     hour = get_eat_now().hour
-    today = get_eat_today().isoformat()
+    today_date = get_eat_today()
+    today = today_date.isoformat()
+    active_since = (today_date - timedelta(days=NUDGE_IDLE_DAYS)).isoformat()
 
     subscribers = get_subscribers_for_nudge(
         current_hour=hour,
         delay_hours=NUDGE_DELAY_HOURS,
         activity_date=today,
         nudge_date=today,
+        active_since=active_since,
     )
     if not subscribers:
-        log_event("nudge_none_due", hour=hour)
+        log_event("nudge_none_due", hour=hour, active_since=active_since)
         return
 
     sent = 0
@@ -42,7 +47,13 @@ def main() -> None:
             record_nudge(chat_id, today)
             sent += 1
 
-    log_event("nudge_sent", sent=sent, total=len(subscribers), hour=hour)
+    log_event(
+        "nudge_sent",
+        sent=sent,
+        total=len(subscribers),
+        hour=hour,
+        active_since=active_since,
+    )
 
 
 if __name__ == "__main__":

@@ -182,60 +182,153 @@ def test_get_streak_only_counts_this_chat_id():
 
 # --- nudge eligibility ---
 
-def test_get_subscribers_for_nudge_matches_hour():
-    from db import add_subscriber, get_subscribers_for_nudge
-    add_subscriber("111", hour_eat=6)
-    result = get_subscribers_for_nudge(
-        current_hour=14, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
+# Nudge eligibility. Today is 2026-09-18, a nudge fires at (hour_eat + 8) % 24,
+# and only subscribers seen on or after active_since still get one.
+NUDGE_TODAY = "2026-09-18"
+NUDGE_ACTIVE_SINCE = "2026-09-15"  # today - 3 days
+
+
+def _due(current_hour=14, active_since=NUDGE_ACTIVE_SINCE):
+    from db import get_subscribers_for_nudge
+    return get_subscribers_for_nudge(
+        current_hour=current_hour,
+        delay_hours=8,
+        activity_date=NUDGE_TODAY,
+        nudge_date=NUDGE_TODAY,
+        active_since=active_since,
     )
-    assert [r["chat_id"] for r in result] == ["111"]
+
+
+def test_get_subscribers_for_nudge_matches_hour():
+    from db import add_subscriber, record_activity
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-17")
+    assert [r["chat_id"] for r in _due()] == ["111"]
 
 
 def test_get_subscribers_for_nudge_wraps_past_midnight():
-    from db import add_subscriber, get_subscribers_for_nudge
+    from db import add_subscriber, record_activity
     add_subscriber("111", hour_eat=20)
-    result = get_subscribers_for_nudge(
-        current_hour=4, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
-    )
-    assert [r["chat_id"] for r in result] == ["111"]
+    record_activity("111", "2026-09-17")
+    assert [r["chat_id"] for r in _due(current_hour=4)] == ["111"]
 
 
 def test_get_subscribers_for_nudge_excludes_non_matching_hour():
-    from db import add_subscriber, get_subscribers_for_nudge
+    from db import add_subscriber, record_activity
     add_subscriber("111", hour_eat=6)
-    result = get_subscribers_for_nudge(
-        current_hour=9, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
-    )
-    assert result == []
+    record_activity("111", "2026-09-17")
+    assert _due(current_hour=9) == []
 
 
 def test_get_subscribers_for_nudge_excludes_active_subscriber():
-    from db import add_subscriber, record_activity, get_subscribers_for_nudge
+    from db import add_subscriber, record_activity
     add_subscriber("111", hour_eat=6)
-    record_activity("111", "2026-09-18")
-    result = get_subscribers_for_nudge(
-        current_hour=14, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
-    )
-    assert result == []
+    record_activity("111", NUDGE_TODAY)
+    assert _due() == []
 
 
 def test_get_subscribers_for_nudge_excludes_already_nudged():
-    from db import add_subscriber, record_nudge, get_subscribers_for_nudge
+    from db import add_subscriber, record_activity, record_nudge
     add_subscriber("111", hour_eat=6)
-    record_nudge("111", "2026-09-18")
-    result = get_subscribers_for_nudge(
-        current_hour=14, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
-    )
-    assert result == []
+    record_activity("111", "2026-09-17")
+    record_nudge("111", NUDGE_TODAY)
+    assert _due() == []
 
 
 def test_get_subscribers_for_nudge_returns_hour_eat():
-    from db import add_subscriber, get_subscribers_for_nudge
+    from db import add_subscriber, record_activity
     add_subscriber("111", hour_eat=6)
-    result = get_subscribers_for_nudge(
-        current_hour=14, delay_hours=8, activity_date="2026-09-18", nudge_date="2026-09-18"
-    )
-    assert result[0]["hour_eat"] == 6
+    record_activity("111", "2026-09-17")
+    assert _due()[0]["hour_eat"] == 6
+
+
+# --- the idle window: what stops a nudge run ---
+
+def test_nudge_included_at_the_window_edge():
+    """Last seen exactly active_since. This is the final nudge of the run."""
+    from db import add_subscriber, record_activity
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", NUDGE_ACTIVE_SINCE)
+    assert [r["chat_id"] for r in _due()] == ["111"]
+
+
+def test_nudge_excluded_one_day_past_the_window():
+    from db import add_subscriber, record_activity
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-14")  # one day before active_since
+    assert _due() == []
+
+
+def test_nudge_excluded_when_never_seen():
+    """No activity at all means we have never seen them interact. Leave them be."""
+    from db import add_subscriber
+    add_subscriber("111", hour_eat=6)
+    assert _due() == []
+
+
+def test_nudge_uses_most_recent_activity_not_oldest():
+    """An old row must not keep someone eligible forever."""
+    from db import add_subscriber, record_activity
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-08-01")
+    assert _due() == []
+    record_activity("111", "2026-09-16")
+    assert [r["chat_id"] for r in _due()] == ["111"]
+
+
+def test_nudge_ignores_activity_dated_after_today():
+    """A future row (clock skew, bad backfill) must not keep someone eligible."""
+    from db import add_subscriber, record_activity
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-12-25")
+    assert _due() == []
+
+
+def test_nudge_run_is_capped_at_the_window():
+    """Silent from 09-16 onward: nudged on 17, 18, 19, then left alone."""
+    from datetime import date, timedelta
+    from db import add_subscriber, record_activity, get_subscribers_for_nudge
+
+    add_subscriber("111", hour_eat=6)
+    last_seen = date(2026, 9, 16)
+    record_activity("111", last_seen.isoformat())
+
+    nudged = []
+    for offset in range(1, 8):
+        day = last_seen + timedelta(days=offset)
+        due = get_subscribers_for_nudge(
+            current_hour=14,
+            delay_hours=8,
+            activity_date=day.isoformat(),
+            nudge_date=day.isoformat(),
+            active_since=(day - timedelta(days=3)).isoformat(),
+        )
+        if due:
+            nudged.append(day.isoformat())
+
+    assert nudged == ["2026-09-17", "2026-09-18", "2026-09-19"]
+
+
+def test_nudge_resumes_after_the_subscriber_returns():
+    from datetime import timedelta
+    from db import add_subscriber, record_activity, get_subscribers_for_nudge
+    from datetime import date
+
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-01")  # long gone
+
+    def due_on(day: date):
+        return get_subscribers_for_nudge(
+            current_hour=14,
+            delay_hours=8,
+            activity_date=day.isoformat(),
+            nudge_date=day.isoformat(),
+            active_since=(day - timedelta(days=3)).isoformat(),
+        )
+
+    assert due_on(date(2026, 9, 20)) == []
+    record_activity("111", "2026-09-20")  # they come back
+    assert [r["chat_id"] for r in due_on(date(2026, 9, 21))] == ["111"]
 
 
 def test_record_nudge_is_idempotent():

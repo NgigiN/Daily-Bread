@@ -9,6 +9,21 @@ from zoneinfo import ZoneInfo
 
 from config import PLAN_FILE, TIMEZONE
 
+PLAN_WEEKS = 52
+
+# The plan's own order, which is how plan.json lists every week: day 1 is
+# Sunday, not Monday. Each weekday carries a theme, so the order is meaningful
+# rather than arbitrary.
+DAY_ORDER = (
+    "Sunday",  # Epistles
+    "Monday",  # The Law
+    "Tuesday",  # History
+    "Wednesday",  # Psalms
+    "Thursday",  # Poetry
+    "Friday",  # Prophecy
+    "Saturday",  # Gospels
+)
+
 DAY_MAP = {
     6: "Sunday",  # Epistles
     0: "Monday",  # The Law
@@ -37,6 +52,21 @@ def load_plan() -> dict:
         return json.load(f)
 
 
+def plan_week_for_date(day: date) -> int:
+    """Plan week 1-52 for a calendar date, cycling from the ISO week number."""
+    return ((day.isocalendar()[1] - 1) % PLAN_WEEKS) + 1
+
+
+def get_week_references(plan_week: int) -> list[tuple[str, str | None]]:
+    """Return [(day_name, reference)] for a plan week, in the plan's own order.
+
+    Reads plan.json only. No passage text is fetched, so this costs nothing
+    against the bible-api rate limit however often it is called.
+    """
+    week = load_plan().get(str(plan_week)) or {}
+    return [(name, week.get(name) or None) for name in DAY_ORDER]
+
+
 def get_reference_for_date(day: date) -> tuple[int, str | None, str | None]:
     """
     Return (plan_week, day_name, reference) for a calendar date.
@@ -44,8 +74,7 @@ def get_reference_for_date(day: date) -> tuple[int, str | None, str | None]:
     plan_week cycles 1–52 from ISO week number.
     """
     plan = load_plan()
-    week_num = day.isocalendar()[1]
-    plan_week = ((week_num - 1) % 52) + 1
+    plan_week = plan_week_for_date(day)
     day_name = DAY_MAP.get(day.weekday())
     week_key = str(plan_week)
 

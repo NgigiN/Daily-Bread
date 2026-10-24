@@ -21,8 +21,17 @@ from formatting import (
     build_reading_messages,
     build_reflection_message,
     build_verse_messages,
+    build_week_message,
 )
-from plan_reader import get_eat_now, get_eat_today, get_reference_for_date
+from plan_reader import (
+    DAY_MAP,
+    PLAN_WEEKS,
+    get_eat_now,
+    get_eat_today,
+    get_reference_for_date,
+    get_week_references,
+    plan_week_for_date,
+)
 from prompts import prompt_for_date
 
 # /command or /command@BotName, optional args
@@ -34,6 +43,7 @@ HELP_TEXT = """📖 <b>Daily Bread Bot</b>
 <b>Reading commands</b>
 /today - today's reading (52-week plan)
 /day 17 may - reading for a date (current year)
+/week 14 - list a week's references, no text
 /verse John 3:16 - a verse or range
 /chapter John 3 - a full chapter (or Rom 1-2)
 
@@ -74,6 +84,7 @@ BOT_COMMANDS = [
     {"command": "help", "description": "Full help and examples"},
     {"command": "today", "description": "Today's plan reading"},
     {"command": "day", "description": "Reading for a date, e.g. 17 may"},
+    {"command": "week", "description": "List a week's references, e.g. /week 14"},
     {"command": "verse", "description": "Look up a verse, e.g. John 3:16"},
     {"command": "chapter", "description": "Look up a chapter, e.g. John 3"},
     {"command": "subscribe", "description": "Get daily readings (e.g. /subscribe 8 for 8am)"},
@@ -143,6 +154,25 @@ def _parse_hour(args: str) -> int | str:
     return hour
 
 
+def _parse_week(args: str) -> int | str:
+    """Return a plan week 1-52 on success, or an HTML error string."""
+    args = args.strip()
+    try:
+        week = int(args)
+    except ValueError:
+        return (
+            f'"{html.escape(args)}" isn\'t a number. '
+            f"Please give a week between 1 and {PLAN_WEEKS}, "
+            "e.g. <code>/week 14</code>."
+        )
+    if not 1 <= week <= PLAN_WEEKS:
+        return (
+            f"Please give a week between 1 and {PLAN_WEEKS}, "
+            "e.g. <code>/week 14</code>."
+        )
+    return week
+
+
 def _reading_for_date(day: date, *, date_label: str | None = None) -> list[str]:
     plan_week, day_name, ref = get_reference_for_date(day)
     if not ref or not day_name:
@@ -187,6 +217,30 @@ def handle_day(args: str, chat_id: str = "") -> list[str]:
         return [parsed]
     label = parsed.strftime("%d %B %Y")
     return _reading_for_date(parsed, date_label=label)
+
+
+def handle_week(args: str, chat_id: str = "") -> list[str]:
+    """List a week's references. No passage text is fetched."""
+    today = get_eat_today()
+
+    if args.strip():
+        parsed = _parse_week(args)
+        if isinstance(parsed, str):
+            return [parsed]
+        plan_week = parsed
+    else:
+        plan_week = plan_week_for_date(today)
+
+    days = get_week_references(plan_week)
+    if not any(ref for _, ref in days):
+        return [f"No readings configured for week {plan_week}."]
+
+    today_day_name = (
+        DAY_MAP.get(today.weekday())
+        if plan_week == plan_week_for_date(today)
+        else None
+    )
+    return [build_week_message(plan_week, days, today_day_name=today_day_name)]
 
 
 def handle_verse(args: str, chat_id: str = "") -> list[str]:
@@ -307,6 +361,7 @@ HANDLERS: dict[str, Callable[[str, str], list[str]]] = {
     "help": handle_help,
     "today": handle_today,
     "day": handle_day,
+    "week": handle_week,
     "verse": handle_verse,
     "chapter": handle_chapter,
     "subscribe": handle_subscribe,

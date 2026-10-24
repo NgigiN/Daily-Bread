@@ -224,3 +224,109 @@ def test_handle_message_text_routes_streak():
     msgs = handle_message_text("/streak", chat_id="42")
     assert msgs is not None
     assert "streak" in msgs[0].lower()
+
+
+# --- /week: list a week's references without fetching any text ---
+
+def _no_network(monkeypatch):
+    def boom(*a, **kw):
+        raise AssertionError("/week must not fetch passage text")
+    monkeypatch.setattr("commands.fetch_bible_text", boom)
+    monkeypatch.setattr("commands.fetch_verse_reference", boom)
+
+
+def test_handle_week_lists_a_requested_week(monkeypatch):
+    _no_network(monkeypatch)
+    from commands import handle_week
+
+    out = handle_week("14")[0]
+    assert "Week 14" in out
+    # Day 1 is Sunday, which is the plan's own first key
+    assert "Day 1" in out and "I Cor 11-12" in out
+    assert "Day 2" in out and "Exo 1-4" in out
+    assert "Day 7" in out and "Mark 7-8" in out
+
+
+def test_handle_week_returns_a_single_message(monkeypatch):
+    _no_network(monkeypatch)
+    from commands import handle_week
+    assert len(handle_week("14")) == 1
+
+
+def test_handle_week_fetches_no_passage_text(monkeypatch):
+    """The whole point: a week listing costs no bible-api calls."""
+    _no_network(monkeypatch)
+    from commands import handle_week
+    handle_week("14")  # the raising stubs above would fail this
+
+
+def test_handle_week_without_args_uses_the_current_week(monkeypatch):
+    from datetime import date
+    _no_network(monkeypatch)
+    from plan_reader import plan_week_for_date
+    import commands
+
+    today = date(2026, 4, 2)  # a Thursday
+    monkeypatch.setattr("commands.get_eat_today", lambda: today)
+
+    out = commands.handle_week("")[0]
+    assert f"Week {plan_week_for_date(today)}" in out
+
+
+def test_handle_week_marks_today_in_the_current_week(monkeypatch):
+    from datetime import date
+    _no_network(monkeypatch)
+    import commands
+
+    today = date(2026, 4, 2)  # a Thursday
+    monkeypatch.setattr("commands.get_eat_today", lambda: today)
+
+    out = commands.handle_week("")[0]
+    assert "today" in [ln for ln in out.splitlines() if "Thursday" in ln][0]
+
+
+def test_handle_week_does_not_mark_today_in_another_week(monkeypatch):
+    from datetime import date
+    _no_network(monkeypatch)
+    from plan_reader import PLAN_WEEKS, plan_week_for_date
+    import commands
+
+    today = date(2026, 4, 2)
+    monkeypatch.setattr("commands.get_eat_today", lambda: today)
+
+    other = (plan_week_for_date(today) % PLAN_WEEKS) + 1
+    assert "today" not in commands.handle_week(str(other))[0]
+
+
+def test_handle_week_rejects_zero(monkeypatch):
+    _no_network(monkeypatch)
+    from commands import handle_week
+    assert "between 1 and 52" in handle_week("0")[0]
+
+
+def test_handle_week_rejects_above_52(monkeypatch):
+    _no_network(monkeypatch)
+    from commands import handle_week
+    assert "between 1 and 52" in handle_week("53")[0]
+
+
+def test_handle_week_rejects_non_numeric(monkeypatch):
+    _no_network(monkeypatch)
+    from commands import handle_week
+    reply = handle_week("fourteen")[0]
+    assert "isn't a number" in reply
+    assert "fourteen" in reply
+
+
+def test_week_is_registered_as_a_command():
+    from commands import BOT_COMMANDS, HANDLERS, HELP_TEXT
+    assert "week" in HANDLERS
+    assert any(c["command"] == "week" for c in BOT_COMMANDS)
+    assert "/week" in HELP_TEXT
+
+
+def test_week_routes_through_handle_message_text(monkeypatch):
+    _no_network(monkeypatch)
+    from commands import handle_message_text
+    replies = handle_message_text("/week 14", chat_id="111")
+    assert replies and "Week 14" in replies[0]

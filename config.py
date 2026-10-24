@@ -36,6 +36,10 @@ SEND_RETRY_BASE_SEC = 1.0
 SEND_RETRY_MAX_SLEEP_SEC = 30.0
 CACHE_TTL_SEC = 3600
 NUDGE_DELAY_HOURS = 8
+# Stop nudging a subscriber who has not interacted within this many days. The
+# nudge is for someone who slipped, not a daily verdict on someone who reads
+# weekly, so a run is capped at this many days and resumes when they come back.
+NUDGE_IDLE_DAYS = 3
 
 TIMEZONE = "Africa/Nairobi"
 

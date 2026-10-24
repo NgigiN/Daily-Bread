@@ -28,8 +28,9 @@ def test_main_does_nothing_when_none_due(monkeypatch):
 
 
 def test_main_sends_nudge_to_eligible_subscriber(monkeypatch):
-    from db import add_subscriber
-    add_subscriber("111", hour_eat=6)  # nudge hour = (6 + 8) % 24 = 14
+    from db import add_subscriber, record_activity
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-17")  # seen yesterday, so still in the window  # nudge hour = (6 + 8) % 24 = 14
 
     monkeypatch.setattr("nudge_check.get_eat_now", lambda: FIXED_NOW)
     monkeypatch.setattr("nudge_check.get_eat_today", lambda: FIXED_TODAY)
@@ -47,8 +48,9 @@ def test_main_sends_nudge_to_eligible_subscriber(monkeypatch):
 
 
 def test_main_does_not_double_nudge_same_day(monkeypatch):
-    from db import add_subscriber
+    from db import add_subscriber, record_activity
     add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-17")  # seen yesterday, so still in the window
 
     monkeypatch.setattr("nudge_check.get_eat_now", lambda: FIXED_NOW)
     monkeypatch.setattr("nudge_check.get_eat_today", lambda: FIXED_TODAY)
@@ -87,8 +89,9 @@ def test_main_skips_subscriber_with_activity_today(monkeypatch):
 
 
 def test_main_does_not_record_nudge_on_failed_send(monkeypatch):
-    from db import add_subscriber
+    from db import add_subscriber, record_activity
     add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-17")  # seen yesterday, so still in the window
 
     monkeypatch.setattr("nudge_check.get_eat_now", lambda: FIXED_NOW)
     monkeypatch.setattr("nudge_check.get_eat_today", lambda: FIXED_TODAY)
