@@ -27,11 +27,13 @@ Grafana Alloy (VPS) ──► Grafana Cloud Loki
 | `/help` | | Full help |
 | `/today` | | Today's plan (EAT) |
 | `/day` | `/day 17 may` | Plan for date (current year) |
+| `/week` | `/week 14` | List a week's references (no text fetched) |
 | `/verse` | `/verse John 3:16` | Verse / range |
 | `/chapter` | `/chapter Rom 1-2` | Chapter(s), max 6 |
 | `/subscribe` | `/subscribe 8` | Subscribe to daily readings (optional hour) |
 | `/unsubscribe` | | Stop daily readings |
 | `/settime` | `/settime 9` | Change delivery hour (EAT) |
+| `/streak` | | Current and longest reading streak |
 
 Interactive use is **open** to anyone who starts the bot.  
 Subscribers manage themselves with `/subscribe` and `/unsubscribe` — the database is the only

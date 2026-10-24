@@ -92,3 +92,20 @@ def build_verse_messages(returned_ref: str, text: str) -> list[str]:
 
 def build_reflection_message(prompt: str) -> str:
     return f"🤔 <b>Reflect</b>\n{html.escape(prompt)}"
+
+
+def build_week_message(
+    plan_week: int,
+    days: list[tuple[str, str | None]],
+    *,
+    today_day_name: str | None = None,
+) -> str:
+    """One message listing a week's references, numbered in the plan's order."""
+    lines = [f"\U0001F4C5 <b>Week {plan_week}</b>"]
+    for number, (day_name, reference) in enumerate(days, start=1):
+        shown = html.escape(reference) if reference else "\u2014"
+        line = f"Day {number} \u00b7 {day_name} \u2014 {shown}"
+        if day_name == today_day_name:
+            line = f"<b>{line}</b> \u2190 today"
+        lines.append(line)
+    return "\n".join(lines)
