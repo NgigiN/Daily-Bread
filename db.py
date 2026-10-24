@@ -196,13 +196,26 @@ def record_nudge(chat_id: str, nudge_date: str) -> None:
 
 
 def get_subscribers_for_nudge(
-    *, current_hour: int, delay_hours: int, activity_date: str, nudge_date: str
+    *,
+    current_hour: int,
+    delay_hours: int,
+    activity_date: str,
+    nudge_date: str,
+    active_since: str,
 ) -> list[dict[str, Any]]:
     """
     Return subscriber rows {chat_id, hour_eat} where:
       (hour_eat + delay_hours) % 24 == current_hour
       AND no activity row for activity_date
       AND no nudges row for nudge_date
+      AND at least one activity row within [active_since, activity_date]
+
+    That last condition is what ends a run. Someone silent for longer than the
+    window is left alone until they come back of their own accord, and a
+    subscriber never seen interacting is never nudged at all. The window is
+    closed at both ends on purpose: an activity row dated after today, which a
+    clock skew or a bad backfill could produce, must not keep someone eligible
+    for ever.
     """
     conn = _connect()
     try:
@@ -212,8 +225,19 @@ def get_subscribers_for_nudge(
             WHERE (hour_eat + ?) % 24 = ?
               AND chat_id NOT IN (SELECT chat_id FROM activity WHERE activity_date = ?)
               AND chat_id NOT IN (SELECT chat_id FROM nudges WHERE nudge_date = ?)
+              AND chat_id IN (
+                    SELECT chat_id FROM activity
+                    WHERE activity_date >= ? AND activity_date <= ?
+              )
             """,
-            (delay_hours, current_hour, activity_date, nudge_date),
+            (
+                delay_hours,
+                current_hour,
+                activity_date,
+                nudge_date,
+                active_since,
+                activity_date,
+            ),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
