@@ -241,10 +241,10 @@ def test_handle_week_lists_a_requested_week(monkeypatch):
 
     out = handle_week("14")[0]
     assert "Week 14" in out
-    # Day 1 is Sunday, which is the plan's own first key
-    assert "Day 1" in out and "I Cor 11-12" in out
-    assert "Day 2" in out and "Exo 1-4" in out
-    assert "Day 7" in out and "Mark 7-8" in out
+    # Sunday is the plan's own first key, and each day carries a theme
+    assert "Sunday · Epistles — I Cor 11-12" in out
+    assert "Monday · The Law — Exo 1-4" in out
+    assert "Saturday · Gospels — Mark 7-8" in out
 
 
 def test_handle_week_returns_a_single_message(monkeypatch):

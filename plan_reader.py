@@ -11,18 +11,20 @@ from config import PLAN_FILE, TIMEZONE
 
 PLAN_WEEKS = 52
 
-# The plan's own order, which is how plan.json lists every week: day 1 is
+# The plan's own order, which is how plan.json lists every week: it starts on
 # Sunday, not Monday. Each weekday carries a theme, so the order is meaningful
-# rather than arbitrary.
-DAY_ORDER = (
-    "Sunday",  # Epistles
-    "Monday",  # The Law
-    "Tuesday",  # History
-    "Wednesday",  # Psalms
-    "Thursday",  # Poetry
-    "Friday",  # Prophecy
-    "Saturday",  # Gospels
-)
+# rather than arbitrary, and the theme is what readers navigate by.
+DAY_THEMES = {
+    "Sunday": "Epistles",
+    "Monday": "The Law",
+    "Tuesday": "History",
+    "Wednesday": "Psalms",
+    "Thursday": "Poetry",
+    "Friday": "Prophecy",
+    "Saturday": "Gospels",
+}
+
+DAY_ORDER = tuple(DAY_THEMES)
 
 DAY_MAP = {
     6: "Sunday",  # Epistles

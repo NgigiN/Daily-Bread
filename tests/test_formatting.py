@@ -35,20 +35,50 @@ WEEK_ROWS = [
 ]
 
 
-def test_build_week_message_numbers_days_from_sunday():
+def test_build_week_message_names_the_day_and_its_theme():
     from formatting import build_week_message
     out = build_week_message(14, WEEK_ROWS)
     assert "Week 14" in out
-    assert "Day 1" in out and "Sunday" in out and "I Cor 11-12" in out
-    assert "Day 2" in out and "Exo 1-4" in out
-    assert "Day 7" in out and "Mark 7-8" in out
-    assert "Day 8" not in out
+    assert "Sunday · Epistles — I Cor 11-12" in out
+    assert "Monday · The Law — Exo 1-4" in out
+    assert "Saturday · Gospels — Mark 7-8" in out
+
+
+def test_build_week_message_drops_the_day_numbering():
+    """Day numbers told the reader nothing the weekday doesn't."""
+    from formatting import build_week_message
+    out = build_week_message(14, WEEK_ROWS)
+    assert "Day 1" not in out
+    assert "Day " not in out
+
+
+def test_build_week_message_gives_every_day_its_theme():
+    from formatting import build_week_message
+    lines = build_week_message(14, WEEK_ROWS).splitlines()[1:]
+    assert [ln.split(" · ")[1].split(" — ")[0] for ln in lines] == [
+        "Epistles",
+        "The Law",
+        "History",
+        "Psalms",
+        "Poetry",
+        "Prophecy",
+        "Gospels",
+    ]
 
 
 def test_build_week_message_lists_days_in_order():
     from formatting import build_week_message
     lines = build_week_message(14, WEEK_ROWS).splitlines()[1:]
-    assert [line.split()[1] for line in lines] == [str(n) for n in range(1, 8)]
+    assert [ln.split(" · ")[0] for ln in lines] == [
+        name for name, _ in WEEK_ROWS
+    ]
+
+
+def test_build_week_message_handles_a_day_with_no_known_theme():
+    """No theme must not leave a dangling separator."""
+    from formatting import build_week_message
+    line = build_week_message(1, [("Someday", "Gen 1")]).splitlines()[1]
+    assert line == "Someday — Gen 1"
 
 
 def test_build_week_message_marks_today_when_given():
