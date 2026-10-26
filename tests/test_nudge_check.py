@@ -110,3 +110,29 @@ def test_main_does_not_record_nudge_on_failed_send(monkeypatch):
     nudge_check.main()
 
     assert sent_to == ["111"]
+
+
+def test_nudge_message_says_how_to_turn_it_off():
+    """An opt-out nobody is told about does not reduce unwanted nudges."""
+    from nudge_check import NUDGE_MESSAGE
+    assert "/nudge off" in NUDGE_MESSAGE
+
+
+def test_main_skips_a_subscriber_who_turned_nudges_off(monkeypatch):
+    from db import add_subscriber, record_activity, set_nudges
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-17")
+    set_nudges("111", False)
+
+    monkeypatch.setattr("nudge_check.get_eat_now", lambda: FIXED_NOW)
+    monkeypatch.setattr("nudge_check.get_eat_today", lambda: FIXED_TODAY)
+
+    sent_to = []
+    monkeypatch.setattr(
+        "nudge_check.send_messages",
+        lambda chat_id, _msg: sent_to.append(chat_id) or True,
+    )
+
+    import nudge_check
+    nudge_check.main()
+    assert sent_to == []

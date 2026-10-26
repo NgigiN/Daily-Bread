@@ -19,7 +19,9 @@ from telegram_client import send_messages
 
 NUDGE_MESSAGE = (
     "👋 Haven't seen you yet today — your reading's still there whenever "
-    "you're ready. No pressure, just a nudge. 🙏"
+    "you're ready. No pressure, just a nudge. 🙏\n\n"
+    "<i>Rather not be reminded? <code>/nudge off</code> stops these and keeps "
+    "your daily reading.</i>"
 )
 
 

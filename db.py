@@ -15,6 +15,20 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _add_column_if_missing(
+    conn: sqlite3.Connection, table: str, column: str, decl: str
+) -> None:
+    """ALTER TABLE ... ADD COLUMN unless the column is already present.
+
+    CREATE TABLE IF NOT EXISTS is a no-op once a table exists, so a column
+    added after a database is already live has to be migrated in. Existing
+    rows take the column default.
+    """
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 def init_db() -> None:
     """Create schema if not exists. Safe to call on every startup."""
     conn = _connect()
@@ -24,9 +38,13 @@ def init_db() -> None:
                 chat_id    TEXT    PRIMARY KEY,
                 hour_eat   INTEGER NOT NULL DEFAULT 6,
                 joined_at  TEXT    NOT NULL,
-                source     TEXT    NOT NULL DEFAULT 'command'
+                source     TEXT    NOT NULL DEFAULT 'command',
+                nudges_on  INTEGER NOT NULL DEFAULT 1
             )
         """)
+        _add_column_if_missing(
+            conn, "subscribers", "nudges_on", "INTEGER NOT NULL DEFAULT 1"
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS activity (
                 chat_id        TEXT    NOT NULL,
@@ -89,6 +107,24 @@ def set_delivery_hour(chat_id: str, hour_eat: int) -> bool:
         conn.close()
 
 
+def set_nudges(chat_id: str, on: bool) -> bool:
+    """Turn nudges on or off for an existing subscriber.
+
+    Returns True if a subscriber row was updated. Daily delivery is
+    unaffected: this only gates the reminder.
+    """
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "UPDATE subscribers SET nudges_on = ? WHERE chat_id = ?",
+            (1 if on else 0, chat_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
 def get_subscribers_for_hour(hour_eat: int) -> list[str]:
     """Return chat_ids whose stored delivery hour matches hour_eat."""
     conn = _connect()
@@ -106,7 +142,8 @@ def get_subscriber(chat_id: str) -> dict[str, Any] | None:
     conn = _connect()
     try:
         row = conn.execute(
-            "SELECT chat_id, hour_eat, joined_at, source FROM subscribers WHERE chat_id = ?",
+            "SELECT chat_id, hour_eat, joined_at, source, nudges_on"
+            " FROM subscribers WHERE chat_id = ?",
             (chat_id,),
         ).fetchone()
         return dict(row) if row else None
@@ -206,6 +243,7 @@ def get_subscribers_for_nudge(
     """
     Return subscriber rows {chat_id, hour_eat} where:
       (hour_eat + delay_hours) % 24 == current_hour
+      AND the subscriber has not turned nudges off
       AND no activity row for activity_date
       AND no nudges row for nudge_date
       AND at least one activity row within [active_since, activity_date]
@@ -223,6 +261,7 @@ def get_subscribers_for_nudge(
             """
             SELECT chat_id, hour_eat FROM subscribers
             WHERE (hour_eat + ?) % 24 = ?
+              AND nudges_on = 1
               AND chat_id NOT IN (SELECT chat_id FROM activity WHERE activity_date = ?)
               AND chat_id NOT IN (SELECT chat_id FROM nudges WHERE nudge_date = ?)
               AND chat_id IN (

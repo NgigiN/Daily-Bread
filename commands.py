@@ -15,7 +15,14 @@ from bible_client import (
     parse_reference,
 )
 from config import MAX_CHAPTERS_PER_REQUEST
-from db import add_subscriber, get_streak, get_subscriber, remove_subscriber, set_delivery_hour
+from db import (
+    add_subscriber,
+    get_streak,
+    get_subscriber,
+    remove_subscriber,
+    set_delivery_hour,
+    set_nudges,
+)
 from formatting import (
     build_passage_messages,
     build_reading_messages,
@@ -52,6 +59,7 @@ HELP_TEXT = """📖 <b>Daily Bread Bot</b>
 /subscribe 8 - subscribe with 8am delivery
 /settime 9 - change your delivery hour
 /unsubscribe - stop daily readings
+/nudge off - stop the reminder, keep the readings
 /streak - see your current and longest streak
 
 /help - this message
@@ -90,6 +98,7 @@ BOT_COMMANDS = [
     {"command": "subscribe", "description": "Get daily readings (e.g. /subscribe 8 for 8am)"},
     {"command": "unsubscribe", "description": "Stop daily readings"},
     {"command": "settime", "description": "Change delivery hour, e.g. /settime 9"},
+    {"command": "nudge", "description": "Reminder on or off, e.g. /nudge off"},
     {"command": "streak", "description": "See your current and longest reading streak"},
 ]
 
@@ -343,6 +352,42 @@ def handle_settime(args: str, chat_id: str = "") -> list[str]:
     return [f"✅ Updated! You'll now get your daily reading at {hour}:00 EAT."]
 
 
+def handle_nudge(args: str, chat_id: str = "") -> list[str]:
+    """Turn the reminder on or off. Daily delivery is unaffected either way."""
+    subscriber = get_subscriber(chat_id)
+    if subscriber is None:
+        return [
+            "You're not subscribed, so there are no nudges to change. "
+            "Send /subscribe to sign up for daily readings."
+        ]
+
+    choice = args.strip().lower()
+    if not choice:
+        if subscriber["nudges_on"]:
+            return [
+                "Nudges are <b>on</b>. If you'd rather not be reminded, send "
+                "<code>/nudge off</code>."
+            ]
+        return [
+            "Nudges are <b>off</b>. To start getting reminders again, send "
+            "<code>/nudge on</code>."
+        ]
+
+    if choice not in ("on", "off"):
+        return [
+            f'I didn\'t understand "{html.escape(args.strip())}". '
+            "Use <code>/nudge off</code> or <code>/nudge on</code>."
+        ]
+
+    set_nudges(chat_id, choice == "on")
+    if choice == "off":
+        return [
+            "Nudges are <b>off</b>. Your daily reading still arrives as usual — "
+            "only the reminder stops. Send <code>/nudge on</code> to bring it back."
+        ]
+    return ["Nudges are <b>on</b>. I'll check in on a day you haven't read yet. 🙏"]
+
+
 def handle_streak(_args: str, chat_id: str = "") -> list[str]:
     if get_subscriber(chat_id) is None:
         return ["You're not subscribed yet. Send /subscribe to start building a streak."]
@@ -367,6 +412,7 @@ HANDLERS: dict[str, Callable[[str, str], list[str]]] = {
     "subscribe": handle_subscribe,
     "unsubscribe": handle_unsubscribe,
     "settime": handle_settime,
+    "nudge": handle_nudge,
     "streak": handle_streak,
 }
 

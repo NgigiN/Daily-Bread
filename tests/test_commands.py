@@ -330,3 +330,97 @@ def test_week_routes_through_handle_message_text(monkeypatch):
     from commands import handle_message_text
     replies = handle_message_text("/week 14", chat_id="111")
     assert replies and "Week 14" in replies[0]
+
+
+# --- /nudge ---
+
+def test_nudge_off_confirms():
+    from commands import handle_nudge, handle_subscribe
+    handle_subscribe("", chat_id="42")
+    msgs = handle_nudge("off", chat_id="42")
+    assert len(msgs) == 1
+    assert "off" in msgs[0].lower()
+
+
+def test_nudge_off_persists():
+    from commands import handle_nudge, handle_subscribe
+    from db import get_subscriber
+    handle_subscribe("", chat_id="42")
+    handle_nudge("off", chat_id="42")
+    assert get_subscriber("42")["nudges_on"] == 0
+
+
+def test_nudge_on_persists():
+    from commands import handle_nudge, handle_subscribe
+    from db import get_subscriber
+    handle_subscribe("", chat_id="42")
+    handle_nudge("off", chat_id="42")
+    handle_nudge("on", chat_id="42")
+    assert get_subscriber("42")["nudges_on"] == 1
+
+
+def test_nudge_is_case_insensitive():
+    from commands import handle_nudge, handle_subscribe
+    from db import get_subscriber
+    handle_subscribe("", chat_id="42")
+    handle_nudge("OFF", chat_id="42")
+    assert get_subscriber("42")["nudges_on"] == 0
+
+
+def test_nudge_without_args_reports_on():
+    from commands import handle_nudge, handle_subscribe
+    handle_subscribe("", chat_id="42")
+    msgs = handle_nudge("", chat_id="42")
+    assert "on" in msgs[0].lower()
+    assert "/nudge off" in msgs[0]
+
+
+def test_nudge_without_args_reports_off():
+    from commands import handle_nudge, handle_subscribe
+    handle_subscribe("", chat_id="42")
+    handle_nudge("off", chat_id="42")
+    msgs = handle_nudge("", chat_id="42")
+    assert "off" in msgs[0].lower()
+    assert "/nudge on" in msgs[0]
+
+
+def test_nudge_rejects_unknown_argument():
+    from commands import handle_nudge, handle_subscribe
+    from db import get_subscriber
+    handle_subscribe("", chat_id="42")
+    msgs = handle_nudge("maybe", chat_id="42")
+    assert "/nudge off" in msgs[0]
+    assert get_subscriber("42")["nudges_on"] == 1
+
+
+def test_nudge_not_subscribed():
+    from commands import handle_nudge
+    msgs = handle_nudge("off", chat_id="42")
+    assert "/subscribe" in msgs[0]
+
+
+def test_nudge_off_keeps_the_subscription():
+    from commands import handle_nudge, handle_subscribe
+    from db import get_subscriber
+    handle_subscribe("", chat_id="42")
+    handle_nudge("off", chat_id="42")
+    assert get_subscriber("42") is not None
+
+
+def test_nudge_is_registered_as_a_command():
+    from commands import BOT_COMMANDS, HANDLERS
+    assert "nudge" in HANDLERS
+    assert any(c["command"] == "nudge" for c in BOT_COMMANDS)
+
+
+def test_nudge_is_in_help_text():
+    from commands import HELP_TEXT
+    assert "/nudge off" in HELP_TEXT
+
+
+def test_nudge_routes_through_handle_message_text():
+    from commands import handle_message_text, handle_subscribe
+    from db import get_subscriber
+    handle_subscribe("", chat_id="42")
+    handle_message_text("/nudge off", chat_id="42")
+    assert get_subscriber("42")["nudges_on"] == 0
