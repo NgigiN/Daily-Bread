@@ -335,3 +335,91 @@ def test_record_nudge_is_idempotent():
     from db import record_nudge
     record_nudge("111", "2026-09-18")
     record_nudge("111", "2026-09-18")  # must not raise
+
+
+# --- nudge opt-out ---
+
+def test_nudges_on_by_default():
+    from db import add_subscriber, get_subscriber
+    add_subscriber("111")
+    assert get_subscriber("111")["nudges_on"] == 1
+
+
+def test_set_nudges_off():
+    from db import add_subscriber, get_subscriber, set_nudges
+    add_subscriber("111")
+    assert set_nudges("111", False) is True
+    assert get_subscriber("111")["nudges_on"] == 0
+
+
+def test_set_nudges_back_on():
+    from db import add_subscriber, get_subscriber, set_nudges
+    add_subscriber("111")
+    set_nudges("111", False)
+    set_nudges("111", True)
+    assert get_subscriber("111")["nudges_on"] == 1
+
+
+def test_set_nudges_unknown_subscriber():
+    from db import set_nudges
+    assert set_nudges("999", False) is False
+
+
+def test_nudge_excluded_when_opted_out():
+    from db import add_subscriber, record_activity, set_nudges
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-17")
+    set_nudges("111", False)
+    assert _due() == []
+
+
+def test_nudge_resumes_when_opted_back_in():
+    from db import add_subscriber, record_activity, set_nudges
+    add_subscriber("111", hour_eat=6)
+    record_activity("111", "2026-09-17")
+    set_nudges("111", False)
+    set_nudges("111", True)
+    assert [r["chat_id"] for r in _due()] == ["111"]
+
+
+def test_opting_out_does_not_stop_daily_delivery():
+    """The opt-out is for nudges only; the reading still goes out."""
+    from db import add_subscriber, set_nudges, get_subscribers_for_hour
+    add_subscriber("111", hour_eat=6)
+    set_nudges("111", False)
+    assert get_subscribers_for_hour(6) == ["111"]
+
+
+def test_init_db_adds_nudges_on_to_an_existing_table(monkeypatch, tmp_path):
+    """Production already has a subscribers table; init_db must migrate it."""
+    import sqlite3
+    db_file = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_file)
+    conn.execute("""
+        CREATE TABLE subscribers (
+            chat_id    TEXT    PRIMARY KEY,
+            hour_eat   INTEGER NOT NULL DEFAULT 6,
+            joined_at  TEXT    NOT NULL,
+            source     TEXT    NOT NULL DEFAULT 'command'
+        )
+    """)
+    conn.execute(
+        "INSERT INTO subscribers (chat_id, hour_eat, joined_at, source)"
+        " VALUES ('old', 6, '2026-08-30T07:10:06+00:00', 'command')"
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("DB_PATH", str(db_file))
+    from db import get_subscriber, init_db
+    init_db()
+
+    assert get_subscriber("old")["nudges_on"] == 1
+
+
+def test_init_db_is_idempotent_after_migration(monkeypatch, tmp_path):
+    db_file = tmp_path / "twice.db"
+    monkeypatch.setenv("DB_PATH", str(db_file))
+    from db import init_db
+    init_db()
+    init_db()  # must not raise

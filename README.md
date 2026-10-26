@@ -33,6 +33,7 @@ Grafana Alloy (VPS) ──► Grafana Cloud Loki
 | `/subscribe` | `/subscribe 8` | Subscribe to daily readings (optional hour) |
 | `/unsubscribe` | | Stop daily readings |
 | `/settime` | `/settime 9` | Change delivery hour (EAT) |
+| `/nudge` | `/nudge off` | Turn the reminder on or off (readings continue) |
 | `/streak` | | Current and longest reading streak |
 
 Interactive use is **open** to anyone who starts the bot.  
@@ -98,7 +99,14 @@ chmod +x deploy/run_daily_docker.sh
 0 * * * *  ~/opt/bible/run_daily_docker.sh >> ~/opt/bible/daily_bread.log 2>&1
 ```
 
-This runs `docker compose exec -T bot python daily_bread.py` (same image, same `.env`).
+This runs `daily_bread.py` then `nudge_check.py` in the running container (same
+image, same `.env`).
+
+`nudge_check.py` sends at most one reminder per subscriber per day, 8 hours
+after their delivery hour, and only if they haven't interacted that day. A
+subscriber who has been silent for longer than `NUDGE_IDLE_DAYS` stops being
+reminded until they come back on their own, and `/nudge off` opts out entirely
+while leaving the daily reading in place.
 
 ---
 
@@ -119,6 +127,7 @@ This runs `docker compose exec -T bot python daily_bread.py` (same image, same `
 |------|------|
 | `bot_app.py` | FastAPI webhook |
 | `daily_bread.py` | Daily push entrypoint |
+| `nudge_check.py` | Hourly reminder entrypoint |
 | `commands.py` | Command handlers |
 | `bible_client.py` | bible-api.com + rate limit + cache |
 | `docker-compose.yml` | `bible-bot` service, loopback publish |
