@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 
 from config import MAX_MESSAGE_LEN
+from plan_reader import DAY_THEMES
 
 FOOTER = "---\n<i>Made with Love by Sam• Text via bible-api.com</i>"
 
@@ -100,11 +101,17 @@ def build_week_message(
     *,
     today_day_name: str | None = None,
 ) -> str:
-    """One message listing a week's references, numbered in the plan's order."""
+    """One message listing a week's references, in the plan's own order.
+
+    Each line is the weekday and its theme, which is how readers refer to the
+    plan. A day number carried no information the weekday did not.
+    """
     lines = [f"\U0001F4C5 <b>Week {plan_week}</b>"]
-    for number, (day_name, reference) in enumerate(days, start=1):
+    for day_name, reference in days:
         shown = html.escape(reference) if reference else "\u2014"
-        line = f"Day {number} \u00b7 {day_name} \u2014 {shown}"
+        theme = DAY_THEMES.get(day_name)
+        label = f"{day_name} \u00b7 {theme}" if theme else day_name
+        line = f"{label} \u2014 {shown}"
         if day_name == today_day_name:
             line = f"<b>{line}</b> \u2190 today"
         lines.append(line)
